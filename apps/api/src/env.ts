@@ -1,4 +1,4 @@
-import type { AnonSessionRow, ShardBindings } from '@aibuilder/db';
+import type { AnonSessionRow, SessionRow, ShardBindings } from '@aibuilder/db';
 
 /**
  * Every binding declared in `apps/api/wrangler.jsonc`, as one typed interface.
@@ -47,7 +47,8 @@ export interface RateLimitBinding {
 }
 
 /** The four rate-limit bindings, by name. Mirrors the `ratelimits` block in `wrangler.jsonc`. */
-export type RateLimitBindingName = 'RL_DRAFT' | 'RL_SUBMIT' | 'RL_UPLOAD' | 'RL_LEADS';
+export type RateLimitBindingName =
+  'RL_DRAFT' | 'RL_SUBMIT' | 'RL_UPLOAD' | 'RL_LEADS' | 'RL_CHECKOUT' | 'RL_AUTH';
 
 /**
  * The message `POST /v1/media/:mediaId/commit` puts on `MEDIA_Q`.
@@ -120,6 +121,10 @@ export interface Env extends ShardBindings {
   readonly RL_SUBMIT: RateLimitBinding;
   readonly RL_UPLOAD: RateLimitBinding;
   readonly RL_LEADS: RateLimitBinding;
+  /** 3 per 60 s per IP, in front of the Checkout re-mint. */
+  readonly RL_CHECKOUT: RateLimitBinding;
+  /** 3 per 60 s, keyed by hashed IP and, separately, by hashed address. */
+  readonly RL_AUTH: RateLimitBinding;
 
   readonly TURNSTILE_SECRET: SecretBinding;
   /** Signs `__Host-aib_draft`. `kid`-versioned; see `src/middleware/draft-cookie.ts`. */
@@ -142,6 +147,26 @@ export interface Env extends ShardBindings {
   readonly R2_QUARANTINE_BUCKET: string;
   /** Public Turnstile widget key, returned by `GET /v1/bootstrap`. */
   readonly TURNSTILE_SITE_KEY: string;
+  /** This Worker's own origin. Stripe's `success_url` points at a route on it. */
+  readonly API_ORIGIN: string;
+  /**
+   * `https://app.<control-plane-domain>` — the dashboard's exact origin.
+   *
+   * A second allowed `Origin` alongside `APP_ORIGIN`, and the target the 402 body points a
+   * lapsed customer at.
+   */
+  readonly DASHBOARD_ORIGIN: string;
+  /**
+   * `app.<control-plane-domain>`. NEVER the apex.
+   *
+   * A one-way door (architecture §10 item 7): once a PSL entry lands, an apex rpID is invalid and
+   * every passkey ever registered is unrecoverable. This must be swapped to the real domain
+   * BEFORE the first passkey is registered — strictly earlier than the rest of the §D1 rename.
+   */
+  readonly WEBAUTHN_RP_ID: string;
+
+  /** `aibuilder-billing`: the only holder of `STRIPE_SECRET_KEY`. Its sole public route is the hook. */
+  readonly BILLING: Fetcher;
 }
 
 /** Request-scoped values middleware puts on the Hono context. */
@@ -152,6 +177,13 @@ export interface AppVariables {
    * Set only by `requireAnonSession`, so a route that reads it is a route that ran the check.
    */
   anonSession: AnonSessionRow;
+  /**
+   * The live session behind `__Host-aib_session`.
+   *
+   * `SessionRow | undefined` rather than an optional member: `exactOptionalPropertyTypes` is on
+   * and `optionalSession` legitimately sets it to nothing.
+   */
+  session: SessionRow | undefined;
 }
 
 /** The Hono environment every app, router and middleware in this Worker is typed against. */

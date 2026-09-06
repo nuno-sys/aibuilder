@@ -29,23 +29,45 @@
  * module-scoped in-flight promise makes a second call return the first one. The other three layers
  * (the server's stored idempotency key, the per-draft Durable Object, and the per-org job limit) are
  * the API's, because a UI guard alone is a suggestion.
+ *
+ * THE SUBMIT NO LONGER STARTS A GENERATION. Under the trial-first funnel (DECISIONS §D2)
+ * `POST /v1/onboarding/submit` reserves the slug, writes the job in `awaiting_payment` and returns a
+ * Stripe Checkout URL; the `checkout.session.completed` webhook is what dispatches the Workflow. So
+ * the submit lands on `phase: 'checkout'` — one screen, `CheckoutHandoff`, that says what was built,
+ * what it costs and how to stop, and whose primary button performs the top-level navigation. The
+ * redirect is never automatic and never framed: an unannounced jump from a button reading "Bouw mijn
+ * website" to a card form is a bait-and-switch, and `x-frame-options: DENY` plus Stripe's own
+ * frame-ancestors policy make the iframe structurally impossible anyway.
+ *
+ * FOUR URL STATES ARE READ ON MOUNT, and each one is a different truth about the same job:
+ *
+ *   `?job=…`                     resume — payment state is learned from the stream
+ *   `?job=…&payment=confirming`  the customer paid; the webhook may not have landed yet (§2.3)
+ *   `?job=…&checkout=cancelled`  they pressed Back at Stripe. Nothing charged, nothing lost
+ *   `?job=…&checkout=expired`    the 30-minute Checkout window closed
+ *
+ * The three markers are ONE-SHOT: they are stripped with `replaceState` the moment they are read, so
+ * a reload never re-asserts a payment state the server has since moved past.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_LOCALE, isLocale, slugify } from '@aibuilder/core';
 import type { Locale } from '@aibuilder/core';
 
-import { ApiError, getBootstrap, getJobStatus, submitOnboarding } from '../lib/api';
-import type { BootstrapResponse, SubmitResponse } from '../lib/api';
+import { plan } from '../content/pricing';
+import { ApiError, getBootstrap, getJobStatus, resumeCheckout, submitOnboarding } from '../lib/api';
+import type { BootstrapResponse, PaymentState, SubmitResponse } from '../lib/api';
 import {
   CTA_ATTRIBUTE,
+  LOCAL_JOB_KEY,
   START_PATH,
   TURNSTILE_ACTION_DRAFT,
   TURNSTILE_ACTION_SUBMIT,
 } from '../lib/config';
 import { copyFor } from '../lib/copy';
-import { interpolate } from '../lib/format';
+import { formatEuro, interpolate, tenantHost } from '../lib/format';
 import { cssVars, useMotionTiming } from '../lib/motion';
+import { readJson, safeStorage, writeJson } from '../lib/storage';
 import { createTurnstileWidget } from '../lib/turnstile';
 import type { TurnstileWidget } from '../lib/turnstile';
 import { STEP_COUNT, STEP_IDS } from '../lib/types';
@@ -59,6 +81,8 @@ import {
   validationMessage,
 } from '../lib/validation';
 
+import CheckoutHandoff from './CheckoutHandoff';
+import type { CheckoutReason } from './CheckoutHandoff';
 import ErrorSummary from './ErrorSummary';
 import GenerationTheatre from './GenerationTheatre';
 import LiveRegions from './LiveRegions';
@@ -76,22 +100,102 @@ import { useDraft, draftHasContent } from './hooks/useDraft';
 import { useKeyboardInset } from './hooks/useKeyboardInset';
 import { useMediaUpload } from './hooks/useMediaUpload';
 import { useSSE } from './hooks/useSSE';
-import type { GenerationEvent } from './hooks/useSSE';
+import type { GenerationEvent, PaymentFrame } from './hooks/useSSE';
 import fields from './fields.module.css';
 import styles from './OnboardingModal.module.css';
 
 /** Delay between the step transition starting and its announcement, so nothing is clipped. */
 const STEP_ANNOUNCE_DELAY_MS = 150;
 
-/** Where the wizard is. `resume` is the one-tap "welcome back" card (UX §7.3). */
-type Phase = 'closed' | 'resume' | 'steps' | 'generating';
+/**
+ * Where the wizard is.
+ *
+ * `resume` is the one-tap "welcome back" card (UX §7.3); `checkout` is the hand-off to Stripe, which
+ * sits between the last step and the theatre and is reachable both forwards (a fresh submit) and
+ * backwards (a return from a cancelled or expired Checkout).
+ */
+type Phase = 'closed' | 'resume' | 'steps' | 'checkout' | 'generating';
 
-/** The running job, once the submit has been accepted. */
+/**
+ * The accepted job.
+ *
+ * Everything here survives the Stripe round trip in `localStorage`, because that round trip is a
+ * document unload and the returning page would otherwise know only the job id from the URL.
+ */
 interface JobHandle {
   readonly jobId: string;
   readonly eventsPath: string;
   readonly slug: string;
   readonly siteUrl: string;
+  readonly paymentState: PaymentState;
+  /** The live Checkout Session, or `null` when there is none to reuse. */
+  readonly checkoutUrl: string | null;
+  /** Epoch milliseconds; `null` when unknown. */
+  readonly checkoutExpiresAt: number | null;
+}
+
+/**
+ * How much of a Checkout Session's life must remain before it is worth reusing.
+ *
+ * A session that is still `open` is exactly the state a customer who pressed Back left it in, so
+ * reusing it is both correct and free — it does not burn one of the five sessions the server allows
+ * a job for its whole life. Below this margin the link would very likely expire between the click
+ * and the page load, and a fresh session is minted instead.
+ */
+const CHECKOUT_REUSE_MARGIN_MS = 60_000;
+
+/** The job handle as it is written to storage, with the clock that bounds its usefulness. */
+interface StoredJob extends JobHandle {
+  /** Epoch milliseconds of the write. */
+  readonly storedAt: number;
+}
+
+/**
+ * How long a stored job is worth resuming.
+ *
+ * Thirty days is the provisional-organisation purge (PHASE2-BILLING-AUTH §2.6): past it the org, the
+ * site, the slug and the shard rows are gone, so offering to resume would be offering to resume
+ * nothing. Below it every one of those rows is still there and the resume is real.
+ */
+const STORED_JOB_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Reads the stored job handle.
+ *
+ * Every field is re-narrowed rather than trusted: this is `localStorage`, which the user, an
+ * extension, or a previous build of this island can have written, and a `paymentState` of the wrong
+ * shape would put the modal on a screen the server disagrees with.
+ */
+function readStoredJob(): StoredJob | null {
+  const stored = readJson<Partial<StoredJob>>(LOCAL_JOB_KEY);
+  if (
+    stored === null ||
+    typeof stored.jobId !== 'string' ||
+    stored.jobId.length === 0 ||
+    typeof stored.eventsPath !== 'string'
+  ) {
+    return null;
+  }
+  const storedAt = typeof stored.storedAt === 'number' ? stored.storedAt : 0;
+  if (Date.now() - storedAt > STORED_JOB_TTL_MS) {
+    return null;
+  }
+  return {
+    jobId: stored.jobId,
+    eventsPath: stored.eventsPath,
+    slug: typeof stored.slug === 'string' ? stored.slug : '',
+    siteUrl: typeof stored.siteUrl === 'string' ? stored.siteUrl : '',
+    paymentState:
+      stored.paymentState === 'awaiting_payment' ||
+      stored.paymentState === 'paid' ||
+      stored.paymentState === 'abandoned'
+        ? stored.paymentState
+        : 'not_required',
+    checkoutUrl: typeof stored.checkoutUrl === 'string' ? stored.checkoutUrl : null,
+    checkoutExpiresAt:
+      typeof stored.checkoutExpiresAt === 'number' ? stored.checkoutExpiresAt : null,
+    storedAt,
+  };
 }
 
 /** Reads the UI locale from `<html lang>`, falling back to the product default. */
@@ -143,6 +247,8 @@ export default function OnboardingModal() {
 
   const [phase, setPhase] = useState<Phase>('closed');
   const [direction, setDirection] = useState<StepDirection>('forward');
+  /** Which copy the nested confirmation carries: a saved draft, or a job waiting on its trial. */
+  const [confirmVariant, setConfirmVariant] = useState<'draft' | 'checkout'>('draft');
   const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
   const [errors, setErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const [submitAttempt, setSubmitAttempt] = useState(0);
@@ -153,6 +259,21 @@ export default function OnboardingModal() {
   const [slots, setSlots] = useState<ReadonlyMap<string, string>>(new Map());
   const [focusReady, setFocusReady] = useState(false);
   const [escapeDuringBuild, setEscapeDuringBuild] = useState(false);
+
+  /* ── Checkout ──────────────────────────────────────────────────────────────────────────────
+     `checkoutReason` is why the hand-off screen is on screen; it selects the first paragraph and
+     the primary button's label. `checkoutFailures` is what makes the retry SINGLE: the first press
+     of a `ready` screen is the attempt, the next one is the retry, and there is no third. */
+  const [checkoutReason, setCheckoutReason] = useState<CheckoutReason>('ready');
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [checkoutExhausted, setCheckoutExhausted] = useState(false);
+  const checkoutPresses = useRef(0);
+  /** True only when the server has confirmed the Checkout Session with Stripe (`payment=confirming`). */
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  /** The `409 trial_already_used` sign-in link, which is a route out and not a field error. */
+  const [submitLink, setSubmitLink] = useState<{ label: string; href: string } | null>(null);
+  const checkoutHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
   const draftApi = useDraft(locale);
   const {
@@ -358,6 +479,43 @@ export default function OnboardingModal() {
    * step the wizard is not on.
    */
   const start = useCallback(async (): Promise<void> => {
+    // A submitted job that never got its card comes back here, not to step 1. Without this the
+    // visitor who abandoned Checkout and later pressed a CTA would be shown their own answers in a
+    // form that is FROZEN — every autosave refused, the offline banner raised over a connection that
+    // is fine, and no route to the payment they actually still want.
+    const pending = readStoredJob();
+    if (
+      pending !== null &&
+      (pending.paymentState === 'awaiting_payment' || pending.paymentState === 'abandoned')
+    ) {
+      await hydrate();
+      setStep(STEP_COUNT);
+      freeze();
+      setJob(pending);
+      checkoutPresses.current = 0;
+      // Which of the three framings is true here cannot be guessed from the fact that a job is
+      // pending — it can only be read off the session. A live link means they simply have not
+      // finished ("last step"); a dead one means it timed out; anything else means they left
+      // Checkout without completing it.
+      const linkIsLive =
+        pending.checkoutUrl !== null &&
+        pending.paymentState !== 'abandoned' &&
+        pending.checkoutExpiresAt !== null &&
+        pending.checkoutExpiresAt - Date.now() > CHECKOUT_REUSE_MARGIN_MS;
+      setCheckoutReason(
+        pending.paymentState === 'abandoned' ? 'expired' : linkIsLive ? 'ready' : 'cancelled',
+      );
+      setCheckoutError(null);
+      setCheckoutExhausted(false);
+      window.history.replaceState(
+        { aibJob: pending.jobId },
+        '',
+        `${START_PATH}?job=${encodeURIComponent(pending.jobId)}`,
+      );
+      openDialog('checkout');
+      return;
+    }
+
     // `hydrate()` returns the resulting draft rather than leaving the caller to read state that
     // React has not re-rendered yet.
     const current = await hydrate();
@@ -376,7 +534,7 @@ export default function OnboardingModal() {
     window.history.replaceState({ aibStep: target }, '', `${START_PATH}?step=${String(target)}`);
 
     openDialog(draftHasContent(current) && current.step > 1 ? 'resume' : 'steps');
-  }, [hydrate, openDialog, setStep]);
+  }, [freeze, hydrate, openDialog, setStep]);
 
   /** The latest `start`, so the entry-point listeners can be registered exactly once. */
   const startRef = useRef(start);
@@ -454,21 +612,68 @@ export default function OnboardingModal() {
     const params = new URLSearchParams(window.location.search);
     const jobId = params.get('job');
     if (jobId !== null && jobId.length > 0) {
-      setJob({
-        jobId,
-        eventsPath: `/v1/jobs/${encodeURIComponent(jobId)}/events`,
-        // The slug and URL are re-learned from the stream's `done` event; until then the reveal is
-        // not shown, so an empty string here is never rendered.
-        slug: '',
-        siteUrl: '',
-      });
+      const checkoutMarker = params.get('checkout');
+      const paymentMarker = params.get('payment');
+      const restored = readStoredJob();
+      const stored = restored !== null && restored.jobId === jobId ? restored : null;
+      const cancelled = checkoutMarker === 'cancelled';
+      const expired = checkoutMarker === 'expired';
+      const confirming = paymentMarker === 'confirming';
+
+      setJob(
+        stored ?? {
+          jobId,
+          eventsPath: `/v1/jobs/${encodeURIComponent(jobId)}/events`,
+          // The slug and URL are re-learned from the stream's `done` event; until then the reveal is
+          // not shown, so an empty string here is never rendered.
+          slug: '',
+          siteUrl: '',
+          // A marker in the URL is knowledge, and using it costs a wrong first frame otherwise: an
+          // unmarked `?job=` is assumed to be running (the overwhelmingly common case) and corrected
+          // within a second by the `payment` frame, while a marked one is known to be waiting and is
+          // rendered as waiting from the first paint.
+          paymentState: cancelled || expired || confirming ? 'awaiting_payment' : 'not_required',
+          checkoutUrl: null,
+          checkoutExpiresAt: null,
+        },
+      );
+
+      // The markers are one-shot. Stripping them now means a reload cannot re-assert "you cancelled"
+      // over a payment that has since completed, and cannot re-show a confirmation for a job that
+      // has been building for ten minutes.
+      window.history.replaceState(
+        { aibJob: jobId },
+        '',
+        `${START_PATH}?job=${encodeURIComponent(jobId)}`,
+      );
+
+      if (cancelled || expired) {
+        // Nothing was charged and nothing is lost: the draft row, the promoted media and the
+        // reserved slug all survive an abandoned Checkout (PHASE2-BILLING-AUTH §2.6). Bringing the
+        // draft back is what lets the hand-off screen name the business, the trade and the photos
+        // rather than showing a job id. It is then FROZEN: the draft row is `submitted`, every
+        // further autosave would be refused, and two refusals would raise the offline banner over a
+        // screen that is perfectly online.
+        void (async () => {
+          await hydrate();
+          setStep(STEP_COUNT);
+          freeze();
+        })();
+        setCheckoutReason(expired ? 'expired' : 'cancelled');
+        openDialog('checkout');
+        return;
+      }
+
+      // `payment=confirming` is only ever issued by `GET /v1/billing/return` after it has asked
+      // Stripe whether the session is complete, so it — and nothing else — is evidence of payment.
+      setPaymentConfirmed(confirming);
       openDialog('generating');
       return;
     }
     void startRef.current();
     // Runs once, on mount: the URL at load time is the entry point, and it does not change again
     // except through `pushState`, which this component performs itself.
-  }, [openDialog]);
+  }, [openDialog, hydrate, setStep, freeze]);
 
   /* ── History ─────────────────────────────────────────────────────────────────────────────── */
 
@@ -501,6 +706,13 @@ export default function OnboardingModal() {
   useEffect(() => {
     const onPopState = (popEvent: PopStateEvent): void => {
       if (phase === 'generating') {
+        return;
+      }
+      if (phase === 'checkout') {
+        // Back from the hand-off means "leave", not "edit": the draft is submitted and frozen, so
+        // returning to step 5 would put a step URL under a form nobody can change. Closing loses
+        // nothing — the job is durable and `/start/?job=…` comes straight back here.
+        closeDialog();
         return;
       }
       const state = popEvent.state;
@@ -550,8 +762,17 @@ export default function OnboardingModal() {
         setEscapeDuringBuild(true);
         return;
       }
+      if (phase === 'checkout') {
+        // A reflex key press must not dismiss the conversion screen, and the generic "your draft is
+        // saved" would be false here: there is no draft any more, there is a reserved address and a
+        // job waiting on a trial. Same dialog, accurate words.
+        setConfirmVariant('checkout');
+        confirmRef.current?.showModal();
+        return;
+      }
       const current = draftRef.current;
       if (current.step > 1 && draftHasContent(current)) {
+        setConfirmVariant('draft');
         confirmRef.current?.showModal();
         return;
       }
@@ -567,6 +788,16 @@ export default function OnboardingModal() {
 
   const onStreamEvent = useCallback((incoming: GenerationEvent): void => {
     setEvent(incoming);
+    // A build event is proof the webhook released the job — the Workflow runs on nothing else. It
+    // is therefore also the authoritative answer to the payment question, and recording it is what
+    // stops a later CTA press from resuming a Checkout for a site that is already being built.
+    setJob((previous) =>
+      previous === null ||
+      previous.paymentState === 'paid' ||
+      previous.paymentState === 'not_required'
+        ? previous
+        : { ...previous, paymentState: 'paid', checkoutUrl: null },
+    );
     const slot = incoming.data?.['slot'];
     const text = incoming.data?.['text'];
     if (typeof slot === 'string' && typeof text === 'string') {
@@ -582,32 +813,71 @@ export default function OnboardingModal() {
     }
   }, []);
 
+  /**
+   * The `payment` frame, from either transport.
+   *
+   * The theatre needs no polling loop and holds no timer for the release: the webhook's dispatch is
+   * followed within a second by the Workflow's own `claimed → queued` event, which arrives as an
+   * ordinary progress frame (PHASE2-BILLING-AUTH §2.2).
+   *
+   * It never moves a job BACK out of `paid`. A reconnect can replay a payment frame that was true
+   * when the connection opened, and applying it over a build in progress would put the confirmation
+   * card back on screen over a site that is already being written.
+   */
+  const onPaymentFrame = useCallback((frame: PaymentFrame): void => {
+    setJob((previous) =>
+      previous === null || previous.paymentState === 'paid'
+        ? previous
+        : {
+            ...previous,
+            paymentState: frame.paymentState,
+            checkoutExpiresAt: frame.deadlineAt ?? previous.checkoutExpiresAt,
+          },
+    );
+  }, []);
+
   const stream = useSSE({
-    jobId: job?.jobId ?? null,
-    eventsPath: job?.eventsPath ?? null,
+    // Opened only for the theatre. A stream held open behind the hand-off screen would sit on a
+    // heartbeat for the whole thirty minutes a customer spends deciding, for no event it could use.
+    jobId: phase === 'generating' ? (job?.jobId ?? null) : null,
+    eventsPath: phase === 'generating' ? (job?.eventsPath ?? null) : null,
     onEvent: onStreamEvent,
+    onPayment: onPaymentFrame,
   });
 
-  // A modal opened from `/start/?job=…` knows the job id and nothing else. One status read fills in
-  // the slug and the live URL, so the deploy act and the reveal name the real domain rather than a
-  // placeholder.
+  /**
+   * One status read per job.
+   *
+   * A modal opened from `/start/?job=…` knows the job id and nothing else, and one read fills in the
+   * slug, the live URL and where the job stands with its trial — so the deploy act and the reveal
+   * name the real domain, and the hand-off screen after a cancelled Checkout can show the address
+   * that is already reserved. It runs even when a stored handle already carries a slug, because that
+   * handle was written before a round trip through Stripe and its `paymentState` may be exactly one
+   * webhook out of date.
+   */
+  const statusReadFor = useRef<string | null>(null);
   useEffect(() => {
-    if (job === null || job.slug.length > 0) {
+    if (job === null || statusReadFor.current === job.jobId) {
       return undefined;
     }
+    statusReadFor.current = job.jobId;
     const controller = new AbortController();
     void (async () => {
       try {
         const status = await getJobStatus(job.jobId, controller.signal);
-        if (status.siteUrl === undefined) {
-          return;
-        }
-        const host = new URL(status.siteUrl).hostname;
-        setJob((previous) =>
-          previous === null
-            ? previous
-            : { ...previous, siteUrl: status.siteUrl ?? '', slug: host.split('.')[0] ?? '' },
-        );
+        setJob((previous) => {
+          if (previous === null) {
+            return previous;
+          }
+          const host = status.siteUrl === undefined ? null : new URL(status.siteUrl).hostname;
+          return {
+            ...previous,
+            siteUrl: status.siteUrl ?? previous.siteUrl,
+            slug: host === null ? previous.slug : (host.split('.')[0] ?? ''),
+            paymentState: status.paymentState ?? previous.paymentState,
+            checkoutExpiresAt: status.checkoutExpiresAt ?? previous.checkoutExpiresAt,
+          };
+        });
       } catch {
         // The stream is the primary source; a failed status read costs the domain in one headline.
       }
@@ -615,6 +885,25 @@ export default function OnboardingModal() {
     return () => {
       controller.abort();
     };
+  }, [job]);
+
+  // The hand-off screen is for a job that still needs a card. If the status read or a `payment`
+  // frame says the trial is already running — the customer paid in another tab, or the webhook
+  // landed while they were reading — the screen would be asking for something already given.
+  useEffect(() => {
+    if (phase !== 'checkout' || job === null) {
+      return;
+    }
+    if (job.paymentState === 'paid' || job.paymentState === 'not_required') {
+      setPhase('generating');
+    }
+  }, [phase, job]);
+
+  /** Mirrors the job handle into storage so the Stripe round trip comes back to something. */
+  useEffect(() => {
+    if (job !== null) {
+      writeJson(LOCAL_JOB_KEY, { ...job, storedAt: Date.now() } satisfies StoredJob);
+    }
   }, [job]);
 
   /* ── Submit ──────────────────────────────────────────────────────────────────────────────── */
@@ -674,6 +963,7 @@ export default function OnboardingModal() {
     }
     setSubmitting(true);
     setSubmitError(null);
+    setSubmitLink(null);
     setSubmitAttempt((previous) => previous + 1);
 
     const current = draftRef.current;
@@ -709,13 +999,16 @@ export default function OnboardingModal() {
       const accepted = await inFlight;
 
       freeze();
+      const paymentState: PaymentState = accepted.paymentState ?? 'not_required';
       setJob({
         jobId: accepted.jobId,
         eventsPath: accepted.eventsUrl,
         slug: accepted.slug,
         siteUrl: accepted.siteUrl,
+        paymentState,
+        checkoutUrl: accepted.checkoutUrl ?? null,
+        checkoutExpiresAt: accepted.checkoutExpiresAt ?? null,
       });
-      setPhase('generating');
       // The generation gets its own history entry, replacing step 6 so that "back" from the reveal
       // does not re-open the form the user has already submitted.
       window.history.replaceState(
@@ -723,12 +1016,63 @@ export default function OnboardingModal() {
         '',
         `${START_PATH}?job=${encodeURIComponent(accepted.jobId)}`,
       );
+      // Two possible next screens, and the API's own answer decides which. An API that has not yet
+      // been rolled forward answers without the payment fields; that job runs immediately and the
+      // Phase 1 theatre is exactly right for it.
+      if (paymentState === 'awaiting_payment') {
+        checkoutPresses.current = 0;
+        setCheckoutReason(accepted.checkoutUrl === undefined ? 'unavailable' : 'ready');
+        setCheckoutError(null);
+        setCheckoutExhausted(false);
+        setPhase('checkout');
+      } else {
+        setPhase('generating');
+      }
     } catch (error: unknown) {
       // Held in a local rather than read back from state: `setSubmitError` has not been applied by
       // the time the announcement is built, and announcing the *previous* error would be worse than
       // announcing nothing.
       let message: string | null;
-      if (error instanceof ApiError && error.fields !== null) {
+      if (error instanceof ApiError && error.code === 'trial_already_used') {
+        // Neither a validation failure nor a payment failure: the request was fine and the identity
+        // is not eligible. The only useful response is the way in, so the message carries a link.
+        message = error.localised(locale);
+        const signInUrl = error.extra['signInUrl'];
+        setSubmitLink(
+          typeof signInUrl === 'string'
+            ? { label: copy.modal.trialUsed.signIn, href: signInUrl }
+            : null,
+        );
+      } else if (error instanceof ApiError && error.code === 'checkout_unavailable') {
+        // The job row exists and is durable; only the Stripe call failed. Nothing the customer
+        // entered is lost, and the hand-off screen can mint a session for it (§1 step 6).
+        const jobId = error.extra['jobId'];
+        if (typeof jobId === 'string' && jobId.length > 0) {
+          freeze();
+          setJob({
+            jobId,
+            eventsPath: `/v1/jobs/${encodeURIComponent(jobId)}/events`,
+            slug: '',
+            siteUrl: '',
+            paymentState: 'awaiting_payment',
+            checkoutUrl: null,
+            checkoutExpiresAt: null,
+          });
+          window.history.replaceState(
+            { aibJob: jobId },
+            '',
+            `${START_PATH}?job=${encodeURIComponent(jobId)}`,
+          );
+          checkoutPresses.current = 0;
+          setCheckoutReason('unavailable');
+          setCheckoutError(null);
+          setCheckoutExhausted(false);
+          setPhase('checkout');
+          // `finally` still runs on this return and clears the in-flight guard.
+          return;
+        }
+        message = error.localised(locale);
+      } else if (error instanceof ApiError && error.fields !== null) {
         const mapped = fieldErrorsToMessages(error.fields, locale);
         setErrors(new Map(mapped.map((entry) => [entry.field, entry.message])));
         message = mapped.length === 0 ? error.localised(locale) : null;
@@ -757,6 +1101,78 @@ export default function OnboardingModal() {
     submitting,
     validateStep,
   ]);
+
+  /* ── The hand-off to Stripe ──────────────────────────────────────────────────────────────── */
+
+  /**
+   * Sends the browser to Checkout.
+   *
+   * `window.location.assign` and nothing else: a TOP-LEVEL navigation. Checkout must never be
+   * framed, and it never opens in a new tab either — a popup blocker eats it, and a customer who
+   * pays in a tab that the original page cannot observe comes back to a screen that has no idea
+   * what happened.
+   *
+   * A still-live session is REUSED rather than re-minted. That is what a customer who pressed Back
+   * left behind, Stripe still considers it `open`, and re-minting would spend one of the five
+   * sessions a job is allowed for its whole life (PHASE2-BILLING-AUTH §5.4) to arrive at the same
+   * page.
+   */
+  const continueToCheckout = useCallback(async (): Promise<void> => {
+    const handle = job;
+    if (handle === null || checkoutBusy) {
+      return;
+    }
+    // The first press of a `ready` screen is the attempt; anything after it is the retry, and there
+    // is exactly one of those. A third identical button against a service that has refused twice is
+    // not a remedy.
+    const isRetry = checkoutReason !== 'ready' || checkoutPresses.current > 0;
+    checkoutPresses.current += 1;
+    setCheckoutBusy(true);
+    setCheckoutError(null);
+    try {
+      const reusable =
+        handle.checkoutUrl !== null &&
+        handle.paymentState !== 'abandoned' &&
+        checkoutReason !== 'expired' &&
+        (handle.checkoutExpiresAt === null ||
+          handle.checkoutExpiresAt - Date.now() > CHECKOUT_REUSE_MARGIN_MS);
+      let target = handle.checkoutUrl;
+      if (!reusable) {
+        const minted = await resumeCheckout(handle.jobId);
+        target = minted.checkoutUrl;
+        setJob((previous) =>
+          previous === null
+            ? previous
+            : {
+                ...previous,
+                paymentState: minted.paymentState,
+                checkoutUrl: minted.checkoutUrl,
+                checkoutExpiresAt: minted.checkoutExpiresAt,
+              },
+        );
+      }
+      if (target === null) {
+        throw new Error('no-checkout-url');
+      }
+      // The draft is already frozen and both copies are flushed, so the unload loses nothing.
+      window.location.assign(target);
+    } catch (error: unknown) {
+      const message = error instanceof ApiError ? error.localised(locale) : copy.modal.genericError;
+      setCheckoutError(message);
+      if (isRetry) {
+        setCheckoutExhausted(true);
+      }
+      announceAssertive(interpolate(copy.a11y.errorPrefix, { message }));
+      setCheckoutBusy(false);
+    }
+    // No `finally`: on the success path the document is navigating away, and clearing `busy` there
+    // would flash the idle button for the frame before the unload.
+  }, [announceAssertive, checkoutBusy, checkoutReason, copy, job, locale]);
+
+  /** The same navigation, as a void-returning handler for the two buttons that fire it. */
+  const onCheckoutPressed = useCallback((): void => {
+    void continueToCheckout();
+  }, [continueToCheckout]);
 
   /* ── Advancing ───────────────────────────────────────────────────────────────────────────── */
 
@@ -790,12 +1206,42 @@ export default function OnboardingModal() {
     window.history.back();
   }, [closeDialog]);
 
+  /* ── The checkout screen's focus and announcement ────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (phase !== 'checkout') {
+      return undefined;
+    }
+    announce(
+      interpolate(copy.checkout.announce, { days: plan.trialDays, today: formatEuro(0, locale) }),
+    );
+    // Focus lands after the entrance, for the same reason it does everywhere else in this island: a
+    // screen reader must not be handed a moving target (UX §5.2). The heading carries `tabIndex=-1`,
+    // so it is a focus target and never a tab stop.
+    const timer = window.setTimeout(() => {
+      checkoutHeadingRef.current?.focus();
+    }, timing.stepIn);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [phase, announce, copy, locale, timing.stepIn]);
+
   /* ── Render ──────────────────────────────────────────────────────────────────────────────── */
 
   const stepIndex = draft.step;
   const stepId = STEP_IDS[stepIndex - 1] ?? 'name';
   const industryLabel =
     bootstrap?.industries.find((entry) => entry.key === draft.values.industryKey)?.label ?? null;
+  const confirmCopy = confirmVariant === 'checkout' ? copy.modal.savedCheckout : copy.modal.saved;
+  /** `€ 0,00`, from the plan whose build guard asserts the rate multiplies out to the annual total. */
+  const todayAmount = formatEuro(0, locale);
+  /** The reserved host, or `null` while it is genuinely unknown — never a guess. */
+  const reservedHost =
+    job !== null && job.siteUrl.length > 0
+      ? new URL(job.siteUrl).hostname
+      : job !== null && job.slug.length > 0
+        ? tenantHost(job.slug)
+        : null;
   const errorList = useMemo<FieldError[]>(
     () => Array.from(errors, ([field, message]) => ({ field, message })),
     [errors],
@@ -831,25 +1277,31 @@ export default function OnboardingModal() {
         <h1 id="onboarding-title" className="sr-only">
           {phase === 'generating'
             ? copy.modal.titleGenerating
-            : interpolate(copy.modal.title, { step: stepIndex, total: STEP_COUNT })}
+            : phase === 'checkout'
+              ? interpolate(copy.checkout.title, { name: draft.values.businessName ?? '' })
+              : interpolate(copy.modal.title, { step: stepIndex, total: STEP_COUNT })}
         </h1>
         <p id="onboarding-step-description" className="sr-only">
-          {stepIndex === STEP_COUNT
-            ? interpolate(copy.modal.stepDescriptionLast, {
-                step: stepIndex,
-                total: STEP_COUNT,
-                name: copy.rail.steps[stepIndex - 1] ?? '',
-              })
-            : interpolate(copy.modal.stepDescription, {
-                step: stepIndex,
-                total: STEP_COUNT,
-                name: copy.rail.steps[stepIndex - 1] ?? '',
-                remaining: STEP_COUNT - stepIndex,
-              })}
+          {/* On the hand-off screen the step description would announce "step 6 of 6" over a screen
+              that is no longer a step, so the dialog describes itself with what it is instead. */}
+          {phase === 'checkout'
+            ? copy.checkout.intro
+            : stepIndex === STEP_COUNT
+              ? interpolate(copy.modal.stepDescriptionLast, {
+                  step: stepIndex,
+                  total: STEP_COUNT,
+                  name: copy.rail.steps[stepIndex - 1] ?? '',
+                })
+              : interpolate(copy.modal.stepDescription, {
+                  step: stepIndex,
+                  total: STEP_COUNT,
+                  name: copy.rail.steps[stepIndex - 1] ?? '',
+                  remaining: STEP_COUNT - stepIndex,
+                })}
         </p>
 
         <header className={styles.header}>
-          {phase !== 'generating' ? (
+          {phase !== 'generating' && phase !== 'checkout' ? (
             <ProgressRail
               step={stepIndex}
               furthestStep={draft.furthestStep}
@@ -872,7 +1324,13 @@ export default function OnboardingModal() {
                 closeDialog();
                 return;
               }
+              if (phase === 'checkout') {
+                setConfirmVariant('checkout');
+                confirmRef.current?.showModal();
+                return;
+              }
               if (draft.step > 1 && draftHasContent(draft)) {
+                setConfirmVariant('draft');
                 confirmRef.current?.showModal();
                 return;
               }
@@ -955,6 +1413,9 @@ export default function OnboardingModal() {
                   className={`${fields.button} ${fields.buttonGhost}`}
                   onClick={() => {
                     if (window.confirm(copy.modal.resume.restartConfirm)) {
+                      // The stored job goes with the draft. Leaving it behind would make the next
+                      // CTA press reopen a hand-off screen for the site they just discarded.
+                      safeStorage().remove(LOCAL_JOB_KEY);
                       reset();
                       setPhase('steps');
                       goToStep(1, 'replace');
@@ -965,6 +1426,24 @@ export default function OnboardingModal() {
                 </button>
               </div>
             </div>
+          ) : null}
+
+          {phase === 'checkout' ? (
+            <CheckoutHandoff
+              locale={locale}
+              businessName={draft.values.businessName ?? ''}
+              industryLabel={industryLabel}
+              host={reservedHost}
+              photoCount={draft.values.mediaIds.length}
+              reason={checkoutReason}
+              deadlineAt={job?.checkoutExpiresAt ?? null}
+              busy={checkoutBusy}
+              error={checkoutError}
+              exhausted={checkoutExhausted}
+              onContinue={onCheckoutPressed}
+              onClose={closeDialog}
+              headingRef={checkoutHeadingRef}
+            />
           ) : null}
 
           {phase === 'generating' && job !== null ? (
@@ -979,6 +1458,12 @@ export default function OnboardingModal() {
               slots={slots}
               connection={stream.connection}
               silentFor={stream.silentFor}
+              paymentState={job.paymentState}
+              paymentConfirmed={paymentConfirmed}
+              checkoutDeadlineAt={job.checkoutExpiresAt}
+              onResumeCheckout={onCheckoutPressed}
+              resuming={checkoutBusy}
+              resumeError={checkoutError}
               onAnnounce={announceGeneration}
               onAnnounceDone={announceAssertive}
               onRelease={closeDialog}
@@ -1084,7 +1569,27 @@ export default function OnboardingModal() {
 
         {phase === 'steps' ? (
           <footer className={styles.footer}>
-            {submitError !== null ? <p className={styles.submitError}>{submitError}</p> : null}
+            {submitError !== null ? (
+              <p className={styles.submitError}>
+                {submitError}
+                {submitLink !== null ? (
+                  <>
+                    {' '}
+                    <a className={styles.submitLink} href={submitLink.href}>
+                      {submitLink.label}
+                    </a>
+                  </>
+                ) : null}
+              </p>
+            ) : null}
+            {/* The disclosure sits INSIDE the sticky footer rather than in the step's body, so it is
+                on screen at the moment of the irreversible action. In the body it scrolls away above
+                the button on every phone, which is where a disclosure is worth nothing. */}
+            {stepIndex === STEP_COUNT ? (
+              <p className={styles.footerNotice}>
+                {interpolate(copy.step6.checkoutNotice, { today: todayAmount })}
+              </p>
+            ) : null}
             <div className={styles.footerRow}>
               <button
                 type="button"
@@ -1123,16 +1628,17 @@ export default function OnboardingModal() {
       </div>
 
       {/* The nested confirmation. Its PRIMARY action is "keep going" — the draft is already saved,
-          so there is nothing to warn about and nothing destructive to default to (UX §6.3). */}
+          so there is nothing to warn about and nothing destructive to default to (UX §6.3). After
+          submit it carries the checkout wording, because by then the facts are different. */}
       <dialog
         ref={confirmRef}
         className={styles.confirm}
         aria-labelledby="onboarding-confirm-title"
       >
         <h2 id="onboarding-confirm-title" className={styles.confirmTitle}>
-          {copy.modal.saved.title}
+          {confirmCopy.title}
         </h2>
-        <p className={styles.confirmBody}>{copy.modal.saved.body}</p>
+        <p className={styles.confirmBody}>{confirmCopy.body}</p>
         <div className={fields.row}>
           <button
             type="button"
@@ -1141,7 +1647,7 @@ export default function OnboardingModal() {
               confirmRef.current?.close();
             }}
           >
-            {copy.modal.saved.keepGoing}
+            {confirmCopy.keepGoing}
           </button>
           <button
             type="button"
@@ -1151,7 +1657,7 @@ export default function OnboardingModal() {
               closeDialog();
             }}
           >
-            {copy.modal.saved.close}
+            {confirmCopy.close}
           </button>
         </div>
       </dialog>

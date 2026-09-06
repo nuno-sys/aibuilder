@@ -1,0 +1,122 @@
+{
+  // ================================================================================================
+  // aibuilder-app — the customer dashboard, the live editor, and the preview origin.
+  //
+  // TWO HOSTNAMES, ONE WORKER, AND THAT IS DELIBERATE.
+  //   app.aibuilder.app      the dashboard. Holds the session cookie, reads D1, renders React.
+  //   preview.aibuilder.app  the draft renderer. Serves attacker-influenced markup — model output
+  //                          and customer copy — and MUST therefore be a different origin from the
+  //                          dashboard, so a draft page can never reach the dashboard's DOM or its
+  //                          session cookie. `workers/app.ts` branches on the Host before React
+  //                          Router sees the request; the preview path shares no cookie, no
+  //                          session and no loader with the dashboard.
+  // They are one Worker because they share `SiteDraftDO` and the R2 blob reads, and splitting them
+  // would mean a service binding on the hot path of every preview repaint for no isolation gain:
+  // the isolation that matters is the browser's origin boundary, and that is already there.
+  //
+  // PLACEHOLDERS. `aibuilder.app` is the placeholder control-plane domain from DECISIONS §D1.
+  // `routes[].pattern`, `routes[].zone_name`, `vars.DASHBOARD_ORIGIN` and `vars.PREVIEW_ORIGIN`
+  // are the same decision written four times; they change together or the Origin guard, the
+  // cookie host and the preview `postMessage` target all disagree. Every `REPLACE_WITH_REAL_ID`
+  // is created by the operator per the root README's Bootstrap section.
+  // ================================================================================================
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aibuilder-app",
+  "main": "workers/app.ts",
+  // Pinned to 2026-08-22, the newest date the bundled workerd accepts. The test pool and production
+  // must run the SAME date or the suite stops proving anything about what deploys.
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "routes": [
+    { "pattern": "app.aibuilder.app/*", "zone_name": "aibuilder.app" },
+    { "pattern": "preview.aibuilder.app/*", "zone_name": "aibuilder.app" },
+  ],
+
+  // The client bundle. Workers Static Assets rather than Pages (DECISIONS §D3): one deployment
+  // primitive across every deployable in this repo.
+  "assets": {
+    "directory": "./build/client",
+    "binding": "ASSETS",
+    // The Worker runs first on every path, because `/` must resolve a session before it decides
+    // whether the dashboard or the login page is the answer.
+    "run_worker_first": true,
+  },
+
+  "d1_databases": [
+    {
+      "binding": "CP",
+      "database_name": "aibuilder-cp",
+      "database_id": "REPLACE_WITH_REAL_ID",
+      "migrations_dir": "../../migrations/cp",
+    },
+    {
+      "binding": "SHARD_000",
+      "database_name": "aibuilder-shard-000",
+      "database_id": "REPLACE_WITH_REAL_ID",
+      "migrations_dir": "../../migrations/shard",
+    },
+  ],
+
+  // Read-only in this Worker: the editor loads `sites/{siteId}/{versionId}/sitedoc.json` to seed a
+  // draft. Nothing here writes a published artefact — that is the publish pipeline's job, and it
+  // runs in the generator.
+  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "aibuilder-blobs", "jurisdiction": "eu" }],
+
+  // One object per SITE, holding that site's unsaved draft. SQLite-backed, because every patch is
+  // written to storage rather than held in memory (architecture §9): a hibernating object that
+  // loses a customer's unsaved edits is the one failure this product cannot survive.
+  "durable_objects": {
+    "bindings": [{ "name": "SITE_DRAFT", "class_name": "SiteDraftDO" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SiteDraftDO"] }],
+
+  // Everything that mutates billing, entitlement or generation state goes through the API, which
+  // owns the gate, the rate limiters and the idempotency keys. This Worker reads tenant data
+  // directly and writes none of it.
+  "services": [{ "binding": "API", "service": "aibuilder-api" }],
+
+  "secrets_store_secrets": [
+    {
+      // Signs the preview session cookie. Comma-separated `kid:material`, first entry signs, any
+      // entry verifies — the same rotation shape as the API's DRAFT_HMAC_KEY.
+      "binding": "PREVIEW_HMAC_KEY",
+      "store_id": "REPLACE_WITH_REAL_ID",
+      "secret_name": "preview_hmac_key",
+    },
+    { "binding": "IP_SALT", "store_id": "REPLACE_WITH_REAL_ID", "secret_name": "ip_salt" },
+  ],
+
+  "vars": {
+    "ENVIRONMENT": "production",
+
+    // The dashboard's own origin. The cookie host, the WebAuthn RP ID's origin, and the exact
+    // string the API's Origin allowlist carries for this Worker.
+    "DASHBOARD_ORIGIN": "https://app.aibuilder.app",
+
+    // The preview origin. Deliberately a different host from DASHBOARD_ORIGIN: it is the
+    // `targetOrigin` of every theme `postMessage` and the only origin allowed to frame a draft.
+    "PREVIEW_ORIGIN": "https://preview.aibuilder.app",
+
+    // The marketing site. Where "start a new site" sends a customer, since onboarding lives there.
+    "APP_ORIGIN": "https://www.aibuilder.app",
+
+    // The API. Reached over the service binding in production; the string is used for the `Origin`
+    // header on those calls and for links a browser follows (the SSE stream, the Stripe return).
+    "API_ORIGIN": "https://api.aibuilder.app",
+
+    // Generated sites live at `<slug>.${SITES_ROOT_DOMAIN}` — a different registrable domain from
+    // the control plane, permanently (architecture §1.1).
+    "SITES_ROOT_DOMAIN": "mijnsaas.com",
+
+    // Media derivatives are served by `aibuilder-media` on the tenant zone. The preview is not on
+    // the tenant origin, so it cannot use `site-kit`'s same-origin `/_a/...` paths and resolves
+    // absolute URLs against this origin instead.
+    "MEDIA_CDN_ORIGIN": "https://cdn.mijnsaas.com",
+
+    // Public by definition — it is rendered into the login page's Turnstile widget, exactly as
+    // `apps/api` returns it from GET /v1/bootstrap. That is why it is a var and not a secret.
+    "TURNSTILE_SITE_KEY": "REPLACE_WITH_REAL_ID",
+  },
+}

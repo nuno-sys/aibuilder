@@ -59,6 +59,18 @@ export const TURNSTILE_ACTION_SUBMIT = 'onboarding-submit';
 export const LOCAL_DRAFT_KEY = 'aib.onboarding.v1';
 
 /**
+ * `localStorage` key for the accepted job, so a return from Stripe knows what it is returning to.
+ *
+ * The Checkout round trip is a full document unload: the island's state is gone and the only things
+ * that come back are the URL's `?job=` and whatever was written to storage. Without this the
+ * returning customer is shown a job id and nothing else — no reserved address, no photo count, no
+ * live Checkout URL to reuse — and the recovery screen has to ask the API for facts it already had.
+ * Nothing secret lives here: the job id is already in the address bar, and the Checkout URL is a
+ * capability the same browser was just about to open.
+ */
+export const LOCAL_JOB_KEY = 'aib.onboarding.job.v1';
+
+/**
  * Local draft schema version.
  *
  * Bumping it invalidates every stored draft, which is the correct behaviour for an incompatible

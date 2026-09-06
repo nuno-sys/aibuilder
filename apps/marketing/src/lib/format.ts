@@ -182,3 +182,38 @@ export function formatDuration(seconds: number): string {
   const minutes = Math.floor(whole / 60);
   return `${String(minutes)}:${String(whole % 60).padStart(2, '0')}`;
 }
+
+/**
+ * An amount in euros, in the reader's own convention: `"€ 119,88"` (nl) / `"€119.88"` (en).
+ *
+ * The euro locale for English is `en-IE` and not `en-GB`: `en-GB` renders EUR as `€119.88` too, but
+ * it is a pound locale and the grouping separators it would choose for larger amounts are the ones a
+ * British reader expects for sterling. `en-IE` is an English locale whose currency actually is the
+ * euro, which is what this product charges in.
+ *
+ * The formatter is built per call rather than cached in a module constant because the island renders
+ * at most a handful of amounts in a session, and a `Map` cache here would cost more bytes than it
+ * saves in time.
+ */
+export function formatEuro(amount: number, locale: Locale): string {
+  return new Intl.NumberFormat(locale === 'nl' ? 'nl-NL' : 'en-IE', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 2,
+  }).format(amount);
+}
+
+/**
+ * A wall-clock time, for the "this payment link is valid until …" line.
+ *
+ * No date part: the Checkout window is 30 minutes wide (`expires_at`, architecture PHASE2 §1 step 6),
+ * so a date would be noise on every reading and misleading on the one that crosses midnight — which
+ * is why the caller only ever renders this for a deadline it has already checked is in the future.
+ */
+export function formatClockTime(epochMs: number, locale: Locale): string {
+  return new Intl.DateTimeFormat(locale === 'nl' ? 'nl-NL' : 'en-IE', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(epochMs));
+}

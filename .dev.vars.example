@@ -72,7 +72,39 @@ IP_SALT=
 
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════════
-# apps/billing/.dev.vars    (Worker: aibuilder-billing)   — Phase 2, not in this delivery
+# apps/billing/.dev.vars    (Worker: aibuilder-billing)
 # ══════════════════════════════════════════════════════════════════════════════════════════════════
-# STRIPE_SECRET_KEY=
-# STRIPE_WEBHOOK_SECRET=
+# The ONLY Worker that holds a Stripe key. Adding it to a second one deletes the property the
+# Worker split was bought for.
+
+# Restricted key is fine and preferred: this Worker needs Checkout Sessions, Customers,
+# Subscriptions, Invoices and the Billing Portal, and nothing else.
+STRIPE_SECRET_KEY=
+
+# From the webhook endpoint's own settings, NOT the API key page. Verified with
+# `constructEventAsync` + `Stripe.createSubtleCryptoProvider()` — Web Crypto, no Node crypto here.
+# A test endpoint and a live endpoint have DIFFERENT secrets; `event.livemode` is checked against
+# ENVIRONMENT so a test event can never move production state.
+STRIPE_WEBHOOK_SECRET=
+
+# Peppers sha256(card.fingerprint) in `trial_grants`. The fingerprint is never stored in the clear:
+# it is a stable identifier for a payment instrument and therefore pseudonymous personal data, on
+# the same reading architecture §8 applies to ip_hash.
+#
+# ROTATING THIS BLINDS THE TRIAL LEDGER. Every stored hash becomes unmatchable, so "new e-mail, same
+# card" starts working again. Rotate only with a re-hash plan.
+TRIAL_FINGERPRINT_PEPPER=
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# apps/app/.dev.vars        (Worker: aibuilder-app — dashboard + live editor)
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+
+# Signs the short-lived, host-scoped, HttpOnly cookie that authorises the preview iframe.
+#
+# Deliberately NOT a query-string token: a draft page carries the mandated `wa.me` link, and the
+# moment a viewer follows one the token leaves in the `Referer`.
+PREVIEW_HMAC_KEY=
+
+# Same salt as the API and generator Workers. See the note above.
+IP_SALT=

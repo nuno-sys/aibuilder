@@ -1,0 +1,24 @@
+{
+  "name": "@aibuilder/media",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "cdn.mijnsaas.com: R2 objects served with a forced Content-Type, nosniff and a sandboxed CSP. Cookieless, and holds nothing but a read-only bucket.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aibuilder/core": "workspace:*",
+    "hono": "^4.13.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260906.1",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.129.0"
+  }
+}

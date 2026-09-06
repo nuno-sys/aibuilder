@@ -22,8 +22,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Locale } from '@aibuilder/core';
 
+import { plan } from '../content/pricing';
 import { copyFor } from '../lib/copy';
-import { interpolate } from '../lib/format';
+import { formatEuro, interpolate } from '../lib/format';
 import type { Draft, DraftValues, MediaItem } from '../lib/types';
 import {
   DESCRIPTION_MAX,
@@ -312,9 +313,13 @@ export default function Step6Story({
         <span>{copy.step6.consent}</span>
       </label>
 
+      {/* The trust strip. Its middle claim used to be "no credit card"; the trial moved in front of
+          the first generation (DECISIONS §D2) and it stopped being true, so the numbers are now
+          interpolated from `content/pricing.ts` — the same module whose build guard asserts that the
+          monthly rate multiplies out to the annual total. A trust strip cannot drift from the price. */}
       <ul className={styles.trust}>
-        {copy.step6.trust.map((item) => (
-          <li key={item} className={styles.trustItem}>
+        {copy.step6.trust.map((template) => (
+          <li key={template} className={styles.trustItem}>
             <svg
               viewBox="0 0 16 16"
               aria-hidden="true"
@@ -327,7 +332,7 @@ export default function Step6Story({
             >
               <path d="M3 8.5 6.5 12 13 4.5" />
             </svg>
-            {item}
+            {interpolate(template, { days: plan.trialDays, today: formatEuro(0, locale) })}
           </li>
         ))}
       </ul>

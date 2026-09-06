@@ -9,6 +9,7 @@
  * mistake impossible in practice.
  */
 export * as blobs from './blobs';
+export * as editor from './editor';
 export * as generationCalls from './generation-calls';
 export * as generationJobs from './generation-jobs';
 export * as leads from './leads';

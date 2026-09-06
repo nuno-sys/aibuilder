@@ -1,0 +1,101 @@
+{
+  // ================================================================================================
+  // aibuilder-billing — the only Worker that holds STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET.
+  //
+  // WHY THIS IS A SEPARATE WORKER AND NOT A ROUTE ON THE API. Two reasons, both structural.
+  // First, bindings are per-Worker, so "one process holds the Stripe keys" is only true if that
+  // process is its own deployment (architecture §8: capability separation on Workers means
+  // splitting Workers). Second, Stripe sends no `Origin` header, and `apps/api`'s `originGuard`
+  // rejects a POST without one by design — mounting the webhook there would mean punching a hole
+  // in the guard that protects every other state-changing route.
+  //
+  // ONE PUBLIC ROUTE. `POST /v1/stripe/webhook` is reachable from the internet because Stripe must
+  // reach it. Everything else answers 404 unless the request arrived over the `BILLING` service
+  // binding, which `apps/api` holds. The route pattern is a distinct hostname from the API's
+  // `api.aibuilder.app/*`, so the two never overlap and there is no precedence to reason about.
+  //
+  // PLACEHOLDERS. Every `REPLACE_WITH_REAL_ID` is created by the operator in the order the root
+  // README's "Bootstrap" section gives. `aibuilder.app` is the placeholder control-plane domain
+  // from DECISIONS §D1; when the real one is registered, `routes`, `zone_name` and the three
+  // `*_ORIGIN` vars change together.
+  // ================================================================================================
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aibuilder-billing",
+  "main": "src/index.ts",
+  // Pinned to 2026-08-22, not a later date: this is the newest compatibility date the workerd
+  // binary bundled with the installed wrangler/miniflare accepts, and the test pool and production
+  // must run the SAME date or the suite stops proving anything about what deploys. It is still past
+  // 2026-08-04, so `nodejs_compat` v2 is implicit. Raise it everywhere at once or nowhere.
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "routes": [{ "pattern": "billing.aibuilder.app/*", "zone_name": "aibuilder.app" }],
+
+  // Both databases. The control plane holds the Stripe mirror and the entitlement column; the shard
+  // holds `generation_jobs`, whose `payment_state` the webhook releases. There is no foreign key
+  // between them and there cannot be, so the ordering of the two writes is this Worker's
+  // responsibility: the control-plane batch commits first, and the shard release is guarded so a
+  // redelivery cannot release twice.
+  "d1_databases": [
+    {
+      "binding": "CP",
+      "database_name": "aibuilder-cp",
+      "database_id": "REPLACE_WITH_REAL_ID",
+      "migrations_dir": "../../migrations/cp",
+    },
+    {
+      "binding": "SHARD_000",
+      "database_name": "aibuilder-shard-000",
+      "database_id": "REPLACE_WITH_REAL_ID",
+      "migrations_dir": "../../migrations/shard",
+    },
+  ],
+
+  // The raw event JSON is archived under `stripe/events/{id}.json`. A single Stripe event can
+  // exceed D1's 2 MB row cap outright, so the ledger keeps only its sha256.
+  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "aibuilder-blobs", "jurisdiction": "eu" }],
+
+  // `checkout.session.completed` is the ONLY dispatcher of the generation Workflow (DECISIONS §D2).
+  // The binding exists for that one call.
+  "services": [{ "binding": "GENERATOR", "service": "aibuilder-generator" }],
+
+  // Secrets Store rather than plain Worker secrets, so rotation is independent of a deploy. The
+  // code reads them through `readSecret()`, which also accepts a plain string binding so
+  // `wrangler secret put` keeps working while Secrets Store is in open beta (architecture §8).
+  "secrets_store_secrets": [
+    {
+      "binding": "STRIPE_SECRET_KEY",
+      "store_id": "REPLACE_WITH_REAL_ID",
+      "secret_name": "stripe_secret_key",
+    },
+    {
+      "binding": "STRIPE_WEBHOOK_SECRET",
+      "store_id": "REPLACE_WITH_REAL_ID",
+      "secret_name": "stripe_webhook_secret",
+    },
+    {
+      // Peppers the card fingerprint before it is stored. A fingerprint is a stable identifier for
+      // a payment instrument and therefore pseudonymous personal data, exactly as `ip_hash` is.
+      "binding": "TRIAL_FINGERPRINT_PEPPER",
+      "store_id": "REPLACE_WITH_REAL_ID",
+      "secret_name": "trial_fingerprint_pepper",
+    },
+  ],
+
+  "vars": {
+    "ENVIRONMENT": "production",
+
+    // Checked against `event.livemode` on every delivery. A test-mode event reaching production is
+    // a misconfigured endpoint, and processing it would grant a real entitlement for a test card.
+    "APP_ORIGIN": "https://www.aibuilder.app",
+    "API_ORIGIN": "https://api.aibuilder.app",
+    "DASHBOARD_ORIGIN": "https://app.aibuilder.app",
+    "SITES_ROOT_DOMAIN": "mijnsaas.com",
+
+    // THE SERVER-SIDE PRICE ALLOWLIST, and the whole of it. A price is never accepted from a client
+    // (architecture §3c step 3); Checkout is created with this id and nothing else. The Product and
+    // the Price are created once by hand in the Stripe Dashboard and never by application code.
+    "STRIPE_PRICE_ID": "REPLACE_WITH_REAL_ID",
+  },
+}

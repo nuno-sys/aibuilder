@@ -11,12 +11,13 @@ const SITE_SCHEMA = 'site-schema';
 const SITE_KIT = 'site-kit';
 const CORE = 'core';
 const AI = 'ai';
+const AUTH = 'auth';
 const DB = 'db';
 const UI = 'ui';
 const CONFIG = 'config';
 
 /** Every element type that lives under `packages/`. */
-const PACKAGE_TYPES = [SITE_SCHEMA, SITE_KIT, CORE, AI, DB, UI, CONFIG];
+const PACKAGE_TYPES = [SITE_SCHEMA, SITE_KIT, CORE, AI, AUTH, DB, UI, CONFIG];
 
 /** The npm scope every internal package publishes under. */
 const SCOPE = '@aibuilder';
@@ -47,6 +48,9 @@ const ALLOWED_LOCAL_DEPENDENCIES = {
   // design-DNA mapping. `core` imports no Cloudflare runtime (rule 5 below), so this does not
   // put a binding behind the prompt builder.
   [AI]: [SITE_SCHEMA, CORE],
+  // `auth` owns sessions, magic links and passkeys: it needs the id/redaction helpers from
+  // `core` and the `sessions` / `auth_tokens` statements from `db`.
+  [AUTH]: [CORE, DB],
   [DB]: [],
   [UI]: [SITE_SCHEMA],
   [CONFIG]: [],

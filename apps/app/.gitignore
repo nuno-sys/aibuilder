@@ -1,0 +1,7 @@
+# The React Router Vite build. `build/client` is uploaded as Workers Static Assets and
+# `build/server` is bundled into the Worker; neither is a source artefact.
+build/
+
+# `react-router typegen` output. Not used by this app's typecheck — routes are typed explicitly
+# against `LoaderFunctionArgs` (see `app/routes.ts`) — but `vite dev` writes it anyway.
+.react-router/

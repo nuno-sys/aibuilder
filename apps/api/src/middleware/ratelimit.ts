@@ -34,6 +34,8 @@ const WINDOW_SECONDS: Readonly<Record<RateLimitBindingName, number>> = {
   RL_SUBMIT: 60,
   RL_UPLOAD: 60,
   RL_LEADS: 60,
+  RL_CHECKOUT: 60,
+  RL_AUTH: 60,
 };
 
 /**

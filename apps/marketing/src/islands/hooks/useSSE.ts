@@ -1,7 +1,7 @@
 /**
  * The generation event stream: `EventSource`, then polling when the stream cannot be kept up.
  *
- * TWO NON-OBVIOUS FACTS THIS HOOK IS BUILT AROUND.
+ * THREE NON-OBVIOUS FACTS THIS HOOK IS BUILT AROUND.
  *
  *  1. **`event: error` from the server and a connection failure arrive on the same listener.** A
  *     named SSE event called `error` is dispatched on the `EventSource` exactly like the built-in
@@ -17,6 +17,15 @@
  *     transport state, which is also what makes the polling fallback interchangeable with the
  *     stream.
  *
+ *  3. **The `payment` frame is a THIRD kind of message and must not touch the sequence cursor.**
+ *     Under the trial-first funnel a stream can open against a job that has not started, and the API
+ *     prefixes the JobHub proxy with one synthetic `event: payment` frame carrying no `id:` line
+ *     (PHASE2-BILLING-AUTH §2.2). Per the SSE specification a message without `id:` does not update
+ *     the client's last-event-id, which is precisely why the server omits it — and the mirror of
+ *     that rule on this side is that the frame never goes through `deliver()`, never advances
+ *     `lastSeq`, and never resets the silence clock. It carries no `seq`, so `toEvent` would reject
+ *     it anyway; handling it in its own listener makes that a design rather than an accident.
+ *
  * After two consecutive failed connections the stream is abandoned for 2-second polling of
  * `GET /v1/jobs/:jobId`. Some corporate proxies and a few mobile carriers buffer or terminate
  * `text/event-stream`; those customers still watch their site being built.
@@ -25,6 +34,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { getJobStatus, jobEventsUrl } from '../../lib/api';
+import type { PaymentState } from '../../lib/api';
 
 /** The twelve phases of `generation_job_events`. The client maps them many-to-one onto UI acts. */
 export type GenerationPhase =
@@ -68,6 +78,45 @@ export interface GenerationEvent {
   readonly message: string | null;
   /** Structured detail: `{ slot, text }` while streaming, counts elsewhere, `en` always. */
   readonly data: Readonly<Record<string, unknown>> | null;
+}
+
+/**
+ * The synthetic `payment` frame, and the same shape synthesised from the polling fallback.
+ *
+ * `deadlineAt` is epoch milliseconds; `resumeUrl` is the API path that mints a fresh Checkout
+ * Session. Both are nullable because a frame for a job that has already been paid carries neither.
+ */
+export interface PaymentFrame {
+  readonly paymentState: PaymentState;
+  readonly deadlineAt: number | null;
+  readonly resumeUrl: string | null;
+}
+
+/** Every payment state, for narrowing an untrusted string off the wire. */
+const PAYMENT_STATES: ReadonlySet<string> = new Set<PaymentState>([
+  'not_required',
+  'awaiting_payment',
+  'paid',
+  'abandoned',
+]);
+
+/** Narrows a parsed `payment` frame, or `null` if it is not one. */
+function toPaymentFrame(raw: unknown): PaymentFrame | null {
+  if (typeof raw !== 'object' || raw === null) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const state = record['paymentState'];
+  if (typeof state !== 'string' || !PAYMENT_STATES.has(state)) {
+    return null;
+  }
+  const deadline = record['deadlineAt'];
+  const resume = record['resumeUrl'];
+  return {
+    paymentState: state as PaymentState,
+    deadlineAt: typeof deadline === 'number' ? deadline : null,
+    resumeUrl: typeof resume === 'string' ? resume : null,
+  };
 }
 
 /** How the events are currently arriving. */
@@ -122,18 +171,22 @@ export function useSSE(params: {
   jobId: string | null;
   eventsPath: string | null;
   onEvent: (event: GenerationEvent) => void;
+  /** The `payment` frame, and the polling fallback's equivalent. Optional; see the module header. */
+  onPayment?: ((frame: PaymentFrame) => void) | undefined;
 }): UseSseResult {
   const { jobId, eventsPath } = params;
   const [connection, setConnection] = useState<SseConnection>('idle');
   const [silentFor, setSilentFor] = useState(0);
 
   const onEventRef = useRef(params.onEvent);
+  const onPaymentRef = useRef(params.onPayment);
   const lastSeq = useRef(0);
   const lastEventAt = useRef(Date.now());
 
   useEffect(() => {
     onEventRef.current = params.onEvent;
-  }, [params.onEvent]);
+    onPaymentRef.current = params.onPayment;
+  }, [params.onEvent, params.onPayment]);
 
   useEffect(() => {
     if (jobId === null || eventsPath === null) {
@@ -176,6 +229,23 @@ export function useSSE(params: {
         void (async () => {
           try {
             const status = await getJobStatus(jobId);
+            // An `awaiting_payment` job answers `phase:'queued', progress:0`, which through
+            // `deliver()` would move the theatre out of the payment act and into "we're starting" —
+            // a claim about a build that has not been authorised yet. The payment states are
+            // therefore reported as payment and the generation event is suppressed, so the fallback
+            // transport tells the same truth the stream does.
+            if (status.paymentState === 'awaiting_payment' || status.paymentState === 'abandoned') {
+              onPaymentRef.current?.({
+                paymentState: status.paymentState,
+                deadlineAt: status.checkoutExpiresAt ?? null,
+                resumeUrl: null,
+              });
+              if (status.paymentState === 'abandoned') {
+                stop();
+                setConnection('closed');
+              }
+              return;
+            }
             const phase = PHASES.has(status.phase) ? (status.phase as GenerationPhase) : 'queued';
             // The polling route has no sequence numbers, so one is synthesised. It only has to be
             // monotonic and disjoint from the stream's, which it is: the stream is gone by now.
@@ -223,6 +293,32 @@ export function useSSE(params: {
       source.addEventListener('open', () => {
         failures = 0;
         setConnection('live');
+      });
+      source.addEventListener('payment', (paymentEvent: Event) => {
+        if (!(paymentEvent instanceof MessageEvent) || typeof paymentEvent.data !== 'string') {
+          return;
+        }
+        failures = 0;
+        setConnection('live');
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(paymentEvent.data);
+        } catch {
+          // A malformed frame is dropped. One bad line must not kill a stream that is otherwise fine.
+          return;
+        }
+        const frame = toPaymentFrame(parsed);
+        if (frame === null) {
+          return;
+        }
+        onPaymentRef.current?.(frame);
+        if (frame.paymentState === 'abandoned') {
+          // The job will never emit another event on its own: the Checkout window closed and only a
+          // fresh session can release it. An `EventSource` left open reconnects forever, so the
+          // stream is closed here and re-opened by the caller if a new session is minted.
+          stop();
+          setConnection('closed');
+        }
       });
       source.addEventListener('progress', onMessage);
       source.addEventListener('done', (event: Event) => {

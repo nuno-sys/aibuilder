@@ -4,12 +4,15 @@ import type { AppEnv } from './env';
 import { internalErrorResponse, notFoundResponse } from './lib/responses';
 import { appCors, jsonContentTypeGuard, originGuard } from './middleware/origin';
 import { securityHeaders } from './middleware/security-headers';
+import { authRoutes } from './routes/auth';
+import { billingRoutes } from './routes/billing';
 import { bootstrapRoutes } from './routes/bootstrap';
 import { claimRoutes } from './routes/claim';
 import { draftRoutes } from './routes/drafts';
 import { geoRoutes } from './routes/geo';
 import { jobRoutes } from './routes/jobs';
 import { mediaRoutes } from './routes/media';
+import { siteRoutes } from './routes/sites';
 import { slugRoutes } from './routes/slug';
 import { submitRoutes } from './routes/submit';
 
@@ -29,10 +32,10 @@ import { submitRoutes } from './routes/submit';
  * Per-route middleware (rate limiting, the draft cookie) is mounted by the route modules
  * themselves, because which limit applies is a property of the route and not of the app.
  *
- * NOT MOUNTED HERE: `POST /v1/leads/:siteId`. Its only caller is the tenant renderer, which is out
- * of this delivery (VERIFIED-FACTS.md, "Deliberate deviations" 2). The `RL_LEADS` binding is
- * declared in `wrangler.jsonc` so the namespace is reserved and the config does not have to change
- * when the route lands with `apps/renderer`.
+ * NOT MOUNTED HERE: `POST /v1/leads/:siteId`. `apps/renderer` shipped in Phase 2 and calls this
+ * Worker through its `API` service binding, but the lead endpoint itself is Phase 3 — it needs the
+ * per-tenant origin allowlist and the spam scoring that go with a live contact form. `RL_LEADS` is
+ * already declared in `wrangler.jsonc` so the namespace is reserved.
  */
 const app = new Hono<AppEnv>();
 
@@ -48,6 +51,9 @@ app.route('/v1/geo', geoRoutes);
 app.route('/v1/media', mediaRoutes);
 app.route('/v1/onboarding', submitRoutes);
 app.route('/v1/jobs', jobRoutes);
+app.route('/v1/auth', authRoutes);
+app.route('/v1/billing', billingRoutes);
+app.route('/v1/sites', siteRoutes);
 app.route('/claim', claimRoutes);
 
 app.notFound(() => notFoundResponse('route_not_found'));

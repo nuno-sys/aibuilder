@@ -14,7 +14,9 @@
     "@aibuilder/ai": "workspace:*",
     "@aibuilder/core": "workspace:*",
     "@aibuilder/db": "workspace:*",
+    "@aibuilder/site-kit": "workspace:*",
     "@aibuilder/site-schema": "workspace:*",
+    "hono": "^4.13.7",
     "zod": "^4.5.4"
   },
   "devDependencies": {

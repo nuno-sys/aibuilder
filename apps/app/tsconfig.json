@@ -1,0 +1,42 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Both halves of this app are in one program on purpose. A route module's loader runs on
+    // workerd and its default export renders in a browser, and splitting them into two projects
+    // would mean the shared props type crosses a project boundary — which is exactly the type you
+    // most want checked.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [
+      "@cloudflare/workers-types",
+      "vite/client",
+      // `cloudflare:test`'s module declarations, for the SiteDraftDO suite. Vitest resolves the
+      // module at runtime; only `tsc` needs to be told it exists.
+      "@cloudflare/vitest-pool-workers/types"
+    ],
+    "jsx": "react-jsx",
+    // TWO JSX RUNTIMES IN ONE PROGRAM, and this is how they coexist.
+    //
+    // Internal packages are unbuilt (`"exports": { ".": "./src/index.ts" }`), so importing
+    // `@aibuilder/site-kit` compiles ITS `.tsx` sources inside this project — and those are
+    // `hono/jsx`, with `class` and `srcset` attributes and hono's own `JSX.Element`. This app's own
+    // components are React. A tsconfig has exactly one `jsxImportSource`, so one of the two has to
+    // be per-file.
+    //
+    // The default is `hono/jsx` (the dependency's, which this app cannot annotate) and every `.tsx`
+    // file in `app/` carries `/** @jsxImportSource react */` as its first line (which this app can).
+    // Vite reads these same options for its esbuild transform and honours the same pragma, so the
+    // compiler and the bundler agree file by file. `apps/generator/tsconfig.json` documents the
+    // simpler half of this problem — it needs only the hono side, because none of its own code is
+    // JSX.
+    "jsxImportSource": "hono/jsx",
+    "allowJs": false
+  },
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "workers/**/*.ts",
+    "vite.config.ts",
+    "react-router.config.ts"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  // ================================================================================================
+  // aibuilder-media — cdn.mijnsaas.com (architecture §S2, "apps/media/wrangler.jsonc").
+  //
+  // THE SMALLEST WORKER IN THE PRODUCT, AND THAT IS THE DESIGN. It holds one read-only bucket. No
+  // D1, no KV, no secret, no service binding, no analytics. It serves bytes that a member of the
+  // public uploaded, so the only interesting question about it is what an attacker gains by getting
+  // their bytes served from here — and the answer is nothing, because the `Content-Type` is forced
+  // from the key shape, `nosniff` is unconditional, and the CSP is `default-src 'none'; sandbox`.
+  //
+  // THE ROUTE IS THE CARVE-OUT. `aibuilder-renderer` claims `*/*` on this zone. A route is matched
+  // by specificity, so `cdn.mijnsaas.com/*` wins here and the renderer never sees a cdn request —
+  // which is what stops the renderer fetching itself for an asset (§1.2). This must be proven on a
+  // deployed zone, not assumed: the two Workers' routes are the only thing separating them.
+  // ================================================================================================
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aibuilder-media",
+  "main": "src/index.ts",
+  // Pinned to 2026-08-22 for the same reason as every other Worker here: it is the newest date the
+  // bundled workerd accepts, and production and the test pool must run the SAME date.
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "routes": [{ "pattern": "cdn.mijnsaas.com/*", "zone_name": "mijnsaas.com" }],
+
+  // The one binding. Read-only in practice: there is no `put` and no `delete` anywhere in `src/`.
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "aibuilder-media", "jurisdiction": "eu" }],
+
+  "vars": {
+    "ENVIRONMENT": "production",
+    // Read only to decide the HSTS parameters. `cdn.` is inside our own zone, so it gets the full
+    // policy; the var exists so that a future `cdn.<customer-domain>` cannot be preloaded by
+    // accident (§S7).
+    "SITES_ROOT_DOMAIN": "mijnsaas.com",
+  },
+}

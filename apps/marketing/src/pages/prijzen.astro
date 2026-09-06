@@ -11,7 +11,11 @@ import Faq from '../components/Faq.astro';
 import Pricing from '../components/Pricing.astro';
 import Base from '../layouts/Base.astro';
 import { brand } from '../content/site';
-import { plan } from '../content/pricing';
+import { formatEuro, plan } from '../content/pricing';
+
+/** See `components/Pricing.astro` — the same worked example, from the same one source of truth. */
+const NL_VAT_RATE = 0.21;
+const annualInclVat = formatEuro(Math.round(plan.annualTotalEur * (1 + NL_VAT_RATE) * 100) / 100);
 
 const offerGraph = [
   {
@@ -39,7 +43,7 @@ const offerGraph = [
 
 <Base
   title="Prijzen"
-  description="Eén abonnement van € 9,99 per maand, jaarlijks gefactureerd als € 119,88 exclusief btw. Zeven dagen gratis proberen, daarna pas betalen."
+  description="Eén abonnement: € 119,88 per jaar exclusief btw, oftewel € 9,99 per maand. Zeven dagen gratis proberen; vandaag betaal je € 0,00."
   graph={offerGraph}
 >
   <Pricing
@@ -61,10 +65,18 @@ const offerGraph = [
           het bedrag.
         </dd>
 
-        <dt>Waarom een betaalmethode bij de start?</dt>
+        <dt>Waarom een betaalmethode voordat mijn site gebouwd wordt?</dt>
         <dd>
-          Om te voorkomen dat het aanmaken van websites geautomatiseerd wordt misbruikt. Tijdens de
-          proefperiode wordt er niets afgeschreven.
+          Het opbouwen van een website kost ons rekenkracht, en zonder drempel wordt dat
+          geautomatiseerd misbruikt. Daarom geef je je betaalmethode op vlak vóór het bouwen, bij
+          Stripe, en beginnen we direct daarna. Er wordt op dat moment {formatEuro(0)} afgeschreven.
+        </dd>
+
+        <dt>Wat als ik de betaalpagina sluit zonder af te ronden?</dt>
+        <dd>
+          Dan gebeurt er niets. Je antwoorden, je foto’s en het webadres dat we voor je hebben
+          gereserveerd blijven staan, en je kunt op dezelfde pagina verdergaan wanneer je wilt. Een
+          betaallink is dertig minuten geldig; is die verlopen, dan maken we er een nieuwe voor je.
         </dd>
 
         <dt>Hoe zeg je op?</dt>
@@ -77,7 +89,9 @@ const offerGraph = [
         <dt>Btw</dt>
         <dd>
           Alle bedragen zijn exclusief btw. Btw wordt bij het afrekenen berekend op basis van je
-          land en, voor zakelijke klanten binnen de EU, je btw-nummer.
+          land en, voor zakelijke klanten binnen de EU, je btw-nummer. Een Nederlandse consument
+          betaalt met 21% btw {annualInclVat} per jaar; een zakelijke klant in een ander EU-land met
+          een geldig btw-nummer rekent de btw zelf af (verleggingsregeling).
         </dd>
 
         <dt>Wat gebeurt er met je site als je stopt?</dt>

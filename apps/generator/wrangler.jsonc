@@ -108,7 +108,11 @@
   // Stock lookups are cached by composed-query hash. Pexels' default allowance is 200 requests per
   // hour and 20,000 per month (§S3), which without this cache throttles signup throughput to
   // roughly 20-30 sites an hour.
-  "kv_namespaces": [{ "binding": "STOCK_CACHE", "id": "REPLACE_WITH_REAL_ID" }],
+  "kv_namespaces": [
+    { "binding": "STOCK_CACHE", "id": "REPLACE_WITH_REAL_ID" },
+    // The publish pointer. Written LAST in `core/publish.ts` — the flip that makes a version live.
+    { "binding": "ROUTING", "id": "REPLACE_WITH_REAL_ID" },
+  ],
 
   // Mandatory re-encode of every accepted upload (§8). Not listed in the §S2 summary line, and
   // required by it: "re-encode through the Images binding with metadata:'none'" is this Worker's

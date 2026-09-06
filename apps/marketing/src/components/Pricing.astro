@@ -28,6 +28,18 @@ const { id, eyebrow, title, body, headingLevel = 'h2' } = Astro.props;
 
 const monthly = formatEuro(plan.monthlyEur);
 const annual = formatEuro(plan.annualTotalEur);
+const today = formatEuro(0);
+
+/**
+ * The standard Dutch VAT rate, used only to render a worked example.
+ *
+ * The price is quoted excluding VAT because the target market is businesses
+ * (`pricing.ts` → `vatIncluded: false`), and Stripe Tax computes the real figure from the customer's
+ * country and VAT number at checkout. A consumer in the Netherlands nevertheless pays this, and
+ * showing the number they will actually be charged is worth more than a sentence about a mechanism.
+ */
+const NL_VAT_RATE = 0.21;
+const annualInclVat = formatEuro(Math.round(plan.annualTotalEur * (1 + NL_VAT_RATE) * 100) / 100);
 ---
 
 <section class="section section--subtle pricing" id={id}>
@@ -41,18 +53,35 @@ const annual = formatEuro(plan.annualTotalEur);
     <div class="pricing__card">
       <div class="pricing__headline">
         <p class="pricing__plan">{plan.name}</p>
-        <p class="pricing__amount">
-          <span class="pricing__figure tabular">{monthly}</span>
-          <span class="pricing__unit">per maand</span>
-        </p>
         {/*
-          The sentence a customer can check against their bank statement. It states the number that
-          is actually charged, when it is charged, and on what VAT basis.
+          TWO FIGURES, ONE SIZE. The headline rate and the amount that is actually charged sit side
+          by side at identical weight, because the Omnibus revision of the UCPD treats a monthly rate
+          billed annually — with the annual total demoted to smaller type or a footnote — as a
+          misleading omission. `{annual}` is also literally what Stripe Checkout will render on the
+          next screen, so the number the customer is promised is the number they see next.
+        */}
+        <div class="pricing__amounts">
+          <p class="pricing__amount">
+            <span class="pricing__amount-label">Per maand</span>
+            <span class="pricing__figure tabular">{monthly}</span>
+            <span class="pricing__unit">afgeleid tarief</span>
+          </p>
+          <p class="pricing__amount">
+            <span class="pricing__amount-label">Wat er wordt afgeschreven</span>
+            <span class="pricing__figure tabular">{annual}</span>
+            <span class="pricing__unit">één keer per jaar, excl. btw</span>
+          </p>
+        </div>
+        {/*
+          The sentence a customer can check against their bank statement. It states what is charged
+          today, what is charged later, when, and on what VAT basis.
         */}
         <p class="pricing__terms">
-          Jaarlijks gefactureerd: <strong class="tabular">{annual} per jaar</strong>, exclusief
-          btw. Na {plan.trialDays} dagen gratis proberen wordt dit bedrag in één keer voor twaalf
-          maanden afgeschreven.
+          Vandaag betaal je <strong class="tabular">{today}</strong>. De eerste {plan.trialDays}
+          dagen zijn gratis; daarna wordt <strong class="tabular">{annual}</strong> exclusief btw in
+          één keer voor twaalf maanden afgeschreven. Zeg je binnen {plan.trialDays} dagen op, dan
+          betaal je niets. Een Nederlandse consument betaalt inclusief 21% btw {annualInclVat} per
+          jaar; zakelijke klanten met een geldig btw-nummer rekenen de btw zelf af.
         </p>
       </div>
 
@@ -84,9 +113,10 @@ const annual = formatEuro(plan.annualTotalEur);
       <div class="pricing__action">
         <CtaButton size="lg" block>{plan.trialDays} dagen gratis proberen</CtaButton>
         <p class="pricing__small">
-          Je geeft bij de start een betaalmethode op. Tijdens de proefperiode van {plan.trialDays}
-          dagen wordt er niets afgeschreven; zeg je in die periode op, dan betaal je niets. Bekijk
-          de <a href="/voorwaarden/">algemene voorwaarden</a>.
+          Je beantwoordt eerst zes vragen; daarna geef je een betaalmethode op bij Stripe en bouwen
+          we je website. Tijdens de proefperiode van {plan.trialDays} dagen wordt er niets
+          afgeschreven, en opzeggen doe je zelf in je account. Bekijk de
+          <a href="/voorwaarden/">algemene voorwaarden</a>.
         </p>
       </div>
     </div>
@@ -122,11 +152,25 @@ const annual = formatEuro(plan.annualTotalEur);
     text-transform: uppercase;
   }
 
+  .pricing__amounts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: var(--space-5);
+    margin-block-start: var(--space-4);
+  }
+
   .pricing__amount {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-2);
-    margin-block-start: var(--space-3);
+    display: grid;
+    gap: var(--space-1);
+    align-content: start;
+  }
+
+  .pricing__amount-label {
+    color: var(--fg-tertiary);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 
   .pricing__figure {
@@ -139,12 +183,12 @@ const annual = formatEuro(plan.annualTotalEur);
 
   .pricing__unit {
     color: var(--fg-secondary);
-    font-size: var(--text-lg);
+    font-size: var(--text-sm);
   }
 
   .pricing__terms {
-    max-inline-size: 54ch;
-    margin-block-start: var(--space-4);
+    max-inline-size: 62ch;
+    margin-block-start: var(--space-5);
     color: var(--fg-secondary);
     text-wrap: pretty;
   }

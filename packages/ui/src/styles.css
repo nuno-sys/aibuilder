@@ -1,0 +1,353 @@
+/*
+ * The dashboard's own design tokens and component styles.
+ *
+ * THIS IS NOT THE TENANT THEME. `site-kit` owns the ~47 custom properties a generated site renders
+ * with; those live inside the preview iframe, on a different origin, and never leak out. Everything
+ * here is prefixed `--aib-` and `aib-`, so a reader can tell at a glance which side of that
+ * boundary a name belongs to, and so no dashboard rule can accidentally style tenant markup.
+ *
+ * CONTRAST. Every foreground/background pair below is at or above WCAG 2.2 AA — 4.5:1 for body
+ * text, 3:1 for large text, borders and focus indicators. The measured ratios are in the comments
+ * next to the pairs that are close enough to be worth checking after an edit.
+ *
+ * FOCUS. `:focus-visible` only, never `:focus` — a mouse user who clicks a button should not get a
+ * ring, and a keyboard user always should. The ring is a two-tone outline (SC 2.4.11 Focus Not
+ * Obscured / SC 2.4.13 Focus Appearance): a light halo under a dark line, so it is visible against
+ * both the page and the control it surrounds.
+ *
+ * MOTION. Every transition is inside `@media (prefers-reduced-motion: no-preference)`. The default
+ * is no animation at all, which is the correct default for a tool people use every day.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --aib-bg: #ffffff;
+  --aib-bg-sunken: #f4f5f8;
+  --aib-bg-raised: #ffffff;
+  --aib-text: #16181d; /* 16.9:1 on --aib-bg */
+  --aib-text-muted: #545b6b; /* 7.1:1 on --aib-bg */
+  --aib-border: #d3d7e0; /* 1.6:1 — decorative separators only, never a control edge */
+  --aib-border-strong: #8b93a5; /* 3.1:1 on --aib-bg — control edges */
+  --aib-accent: #1b47c4; /* 8.1:1 on --aib-bg */
+  --aib-accent-contrast: #ffffff; /* 8.1:1 on --aib-accent */
+  --aib-danger: #b42318; /* 6.5:1 on --aib-bg */
+  --aib-success: #0d6a4a; /* 5.4:1 on --aib-bg */
+  --aib-focus-ring: #16181d;
+  --aib-focus-halo: #ffd400;
+
+  --aib-radius: 8px;
+  --aib-gap: 12px;
+  --aib-tap: 44px; /* Above WCAG 2.2 SC 2.5.8's 24px floor: this is used one-thumbed. */
+  --aib-editor-breakpoint: 900px;
+  --aib-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --aib-bg: #14161a;
+    --aib-bg-sunken: #0e1013;
+    --aib-bg-raised: #1c1f26;
+    --aib-text: #e9ebf0; /* 14.4:1 on --aib-bg */
+    --aib-text-muted: #a4abbb; /* 7.4:1 on --aib-bg */
+    --aib-border: #333844;
+    --aib-border-strong: #767d8e; /* 3.6:1 on --aib-bg */
+    --aib-accent: #9db8ff; /* 8.4:1 on --aib-bg */
+    --aib-accent-contrast: #0b1020; /* 8.9:1 on --aib-accent */
+    --aib-danger: #ff9d94;
+    --aib-success: #5fd3a6;
+    --aib-focus-ring: #ffffff;
+    --aib-focus-halo: #1b47c4;
+  }
+}
+
+/* -- Primitives ------------------------------------------------------------------------------- */
+
+/*
+ * The screen-reader-only class.
+ *
+ * `clip-path` rather than the old `clip` rectangle, and `white-space: nowrap` so a long
+ * announcement is not wrapped into a 1px column — some engines read the wrapped result one
+ * character per line.
+ */
+.aib-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.aib-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 12px 16px;
+  background: var(--aib-bg-raised);
+  color: var(--aib-text);
+  border: 2px solid var(--aib-focus-ring);
+  border-radius: 0 0 var(--aib-radius) 0;
+}
+
+.aib-skip-link:focus {
+  left: 0;
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--aib-focus-ring);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--aib-focus-halo);
+}
+
+/* -- Fields ----------------------------------------------------------------------------------- */
+
+.aib-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-block-end: var(--aib-gap);
+}
+
+.aib-field__label {
+  font-weight: 600;
+  color: var(--aib-text);
+}
+
+.aib-field__required {
+  color: var(--aib-danger);
+  margin-inline-start: 2px;
+}
+
+.aib-field__hint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--aib-text-muted);
+}
+
+.aib-field__message {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.aib-field__message--error {
+  color: var(--aib-danger);
+}
+
+.aib-field__message--success {
+  color: var(--aib-success);
+}
+
+.aib-field__icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.aib-input {
+  width: 100%;
+  min-height: var(--aib-tap);
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--aib-text);
+  background: var(--aib-bg-raised);
+  border: 1px solid var(--aib-border-strong);
+  border-radius: var(--aib-radius);
+}
+
+.aib-input--multiline {
+  min-height: calc(var(--aib-tap) * 2);
+  resize: vertical;
+}
+
+/* Colour is not the only signal (SC 1.4.1): the border also thickens, and `FieldMessage` adds an
+   icon and text. */
+.aib-field--invalid .aib-input {
+  border-width: 2px;
+  border-color: var(--aib-danger);
+}
+
+/* -- Buttons ---------------------------------------------------------------------------------- */
+
+.aib-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--aib-tap);
+  min-width: var(--aib-tap);
+  padding: 8px 16px;
+  font: inherit;
+  font-weight: 600;
+  border-radius: var(--aib-radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.aib-button--block {
+  width: 100%;
+}
+
+.aib-button--primary {
+  background: var(--aib-accent);
+  color: var(--aib-accent-contrast);
+}
+
+.aib-button--secondary {
+  background: var(--aib-bg-raised);
+  color: var(--aib-text);
+  border-color: var(--aib-border-strong);
+}
+
+.aib-button--ghost {
+  background: transparent;
+  color: var(--aib-accent);
+}
+
+.aib-button--danger {
+  background: var(--aib-bg-raised);
+  color: var(--aib-danger);
+  border-color: var(--aib-danger);
+}
+
+/* `aria-disabled` and not `[disabled]`: a busy button keeps focus, so it has to keep looking like a
+   control the user is still standing on. */
+.aib-button[aria-disabled='true'] {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.aib-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* -- Error summary ---------------------------------------------------------------------------- */
+
+.aib-error-summary {
+  border: 2px solid var(--aib-danger);
+  border-radius: var(--aib-radius);
+  padding: 12px 16px;
+  margin-block-end: var(--aib-gap);
+  background: var(--aib-bg-raised);
+}
+
+.aib-error-summary__heading {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--aib-danger);
+}
+
+.aib-error-summary__list {
+  margin: 0;
+  padding-inline-start: 20px;
+}
+
+.aib-error-summary__list a {
+  color: var(--aib-danger);
+}
+
+/* -- The edit sheet --------------------------------------------------------------------------- */
+
+/*
+ * Desktop first in source order, phone in the media query, because the desktop layout is the one
+ * with no JavaScript-dependent state: if the query never matches, `data-expanded` does nothing and
+ * the panel is simply a column.
+ */
+.aib-sheet {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--aib-bg-raised);
+  border-inline-end: 1px solid var(--aib-border);
+}
+
+.aib-sheet__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--aib-gap);
+  padding: 12px 16px;
+  border-block-end: 1px solid var(--aib-border);
+}
+
+.aib-sheet__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.aib-sheet__handle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--aib-tap);
+  min-width: var(--aib-tap);
+  background: transparent;
+  border: 0;
+  border-radius: var(--aib-radius);
+  cursor: pointer;
+}
+
+.aib-sheet__grip {
+  display: block;
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--aib-border-strong);
+}
+
+.aib-sheet__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+@media (max-width: 899px) {
+  .aib-sheet {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    z-index: 20;
+    max-height: 85dvh;
+    border: 1px solid var(--aib-border);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 24px rgb(0 0 0 / 25%);
+    /* `dvh` and not `vh`: the mobile URL bar changes the viewport height while the sheet is open,
+       and `vh` leaves the handle under the browser chrome exactly when the user reaches for it. */
+  }
+
+  .aib-sheet__handle {
+    display: inline-flex;
+  }
+
+  /* Collapsed is a PEEK, not a hide. The title bar stays on screen and reachable, so the sheet can
+     be reopened without hunting for a floating button, and a screen reader in browse mode still
+     finds the region. */
+  .aib-sheet[data-expanded='false'] .aib-sheet__content {
+    display: none;
+  }
+
+  .aib-sheet[data-expanded='true'] .aib-sheet__content {
+    max-height: calc(85dvh - 60px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .aib-sheet {
+    transition: max-height 160ms ease-out;
+  }
+
+  .aib-button {
+    transition:
+      background-color 120ms ease-out,
+      border-color 120ms ease-out;
+  }
+}

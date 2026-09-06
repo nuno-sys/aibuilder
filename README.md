@@ -331,18 +331,21 @@ pnpm exec turbo run dev --filter=@aibuilder/api
 Capability separation is a design invariant. Adding a secret to a second Worker deletes the property
 the two-domain, six-Worker split was bought for.
 
-| Secret              | Worker                | Notes                                                                     |
-| ------------------- | --------------------- | ------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY` | generator **only**    | Separate key per environment. Console workspace spend limit set.          |
-| `PEXELS_KEY`        | generator **only**    | Default tier is 200 req/h, 20 000/month — request the upgrade pre-launch. |
-| `INDEXNOW_KEY`      | generator             | Served at `/<key>.txt` per tenant host. Minted once, never rotated.       |
-| `TURNSTILE_SECRET`  | api                   | Verifies the token minted at draft creation.                              |
-| `DRAFT_HMAC_KEY`    | api                   | Signs `__Host-aib_draft`. `kid`-versioned, dual-accept while rotating.    |
-| `IP_SALT`           | api **and** generator | Rotated daily by cron; two generations retained for a 24 h lookback.      |
-| `R2_ACCESS_KEY_ID`  | api                   | Scoped to `aibuilder-quarantine` only.                                    |
-| `R2_SECRET_KEY`     | api                   | Same token; same scope.                                                   |
-| `GEOCODER_KEY`      | api                   | NL/BE postcode lookup.                                                    |
-| `STRIPE_SECRET_KEY` | billing — Phase 2     | The only Worker that will ever hold it.                                   |
+| Secret                     | Worker                | Notes                                                                     |
+| -------------------------- | --------------------- | ------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`        | generator **only**    | Separate key per environment. Console workspace spend limit set.          |
+| `PEXELS_KEY`               | generator **only**    | Default tier is 200 req/h, 20 000/month — request the upgrade pre-launch. |
+| `INDEXNOW_KEY`             | generator             | Served at `/<key>.txt` per tenant host. Minted once, never rotated.       |
+| `TURNSTILE_SECRET`         | api                   | Verifies the token minted at draft creation.                              |
+| `DRAFT_HMAC_KEY`           | api                   | Signs `__Host-aib_draft`. `kid`-versioned, dual-accept while rotating.    |
+| `IP_SALT`                  | api **and** generator | Rotated daily by cron; two generations retained for a 24 h lookback.      |
+| `R2_ACCESS_KEY_ID`         | api                   | Scoped to `aibuilder-quarantine` only.                                    |
+| `R2_SECRET_KEY`            | api                   | Same token; same scope.                                                   |
+| `GEOCODER_KEY`             | api                   | NL/BE postcode lookup.                                                    |
+| `STRIPE_SECRET_KEY`        | billing **only**      | The only Worker that holds it. Never add it to a second one.              |
+| `STRIPE_WEBHOOK_SECRET`    | billing **only**      | Verifies the hook signature via `constructEventAsync` + Web Crypto.       |
+| `TRIAL_FINGERPRINT_PEPPER` | billing **only**      | Peppers `sha256(card.fingerprint)`. Rotating it blinds the trial ledger.  |
+| `PREVIEW_HMAC_KEY`         | app **only**          | Signs the short-lived host-scoped preview cookie. Never a query token.    |
 
 Non-secret configuration (`ENVIRONMENT`, `APP_ORIGIN`, `SITES_ROOT_DOMAIN`, `MEDIA_ORIGIN`,
 `R2_S3_ENDPOINT`, `ANTHROPIC_MODEL`) lives in each Worker's `vars` block and is mirrored in
@@ -399,33 +402,45 @@ zone, a bad deploy takes every customer site down at once. Deploy one Worker at 
 pnpm exec wrangler deploy --config apps/api/wrangler.jsonc
 ```
 
-Order matters on a first deploy: the generator must exist before the API, because the API declares a
-service binding and Durable Object bindings that name the generator's script.
+Order matters on a first deploy, because a service binding cannot name a Worker that does not exist
+yet:
+
+```
+generator  ->  billing  ->  api  ->  app
+renderer, media          (independent; the tenant zone, deploy last)
+```
+
+The generator must exist before billing (which dispatches the Workflow through a service binding)
+and before the API (which binds the generator's three Durable Objects). Billing must exist before
+the API, which binds it as `BILLING`. `renderer` and `media` bind nothing on the control plane and
+can go at any point — but they carry the `*/*` route on the tenant zone, so they are the deploy that
+can break every customer site at once. Deploy them last, and on their own.
 
 ---
 
 ## Scope of this delivery
 
-This repository implements Phase 1 as scoped: the onboarding modal, the API behind it, the D1 schema
-for both databases, and the Worker logic that builds and dispatches the Anthropic prompt.
+Phases 1 and 2 are implemented.
 
-`apps/renderer`, `apps/media`, `apps/app` and `apps/billing`, and the render/publish Workflow steps,
-are **not** in this delivery. Workflow steps that would call them exist as typed, documented
-functions that throw `NotImplementedInPhase1` — never as silent no-ops.
+**Phase 1** — the onboarding modal, the API behind it, the D1 schema for both databases, and the
+generator that builds and dispatches the Anthropic prompt.
 
-Two other deliberate deviations, both recorded in `.design/VERIFIED-FACTS.md`:
+**Phase 2** — `packages/site-kit` (the tenant component library, with contrast proven analytically
+over the full knob space rather than sampled), `apps/renderer` and `apps/media` (the tenant serving
+path, with publish as a KV pointer flip), `apps/billing` and the trial-first funnel, `packages/auth`
+(magic link + passkeys), and `apps/app` (the dashboard and the live editor).
 
-- **No Drizzle in this phase.** D1 access is hand-written prepared statements exported from
-  `packages/db/src/queries/*`, so every shipped statement is greppable and can be fed to the
-  `EXPLAIN QUERY PLAN` gate. That is why `drizzle-kit` is not a root devDependency. Drizzle arrives
-  in Phase 2 with the dashboard's relational reads.
-- **TypeScript is pinned to `~6.0.x`, not the current 7.x.** `typescript-eslint` declares
-  `typescript >=4.8.4 <6.1.0`; installing TypeScript 7 breaks linting today. Move the pin only
-  together with a `typescript-eslint` release that supports it.
+Deliberately still open:
 
-Domain names are never hardcoded. They come from `APP_ORIGIN` and `SITES_ROOT_DOMAIN`.
-
----
+- **Publish from the editor.** The editor autosaves to `SiteDraftDO` and says so; it does not render
+  a Publish button that would do nothing. The draft -> version -> R2 -> KV flip exists in
+  `packages/core/publish.ts` and is driven by the generator today.
+- **Phase 3** — Cloudflare for SaaS custom hostnames, the blog in non-primary locales, user video
+  (needs Containers and ffmpeg; no build compute runs in a Worker), Places/GBP import, and the
+  Playwright/axe render matrix that covers what the analytical contrast proof cannot (layout, tap
+  targets, overflow).
+- **The lead endpoint** `POST /v1/leads/:siteId`, which needs the per-tenant origin allowlist and
+  spam scoring that go with a live contact form.
 
 ## Open questions
 

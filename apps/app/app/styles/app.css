@@ -1,0 +1,360 @@
+/*
+ * The dashboard's layout. Component styling lives in `@aibuilder/ui`; this file is the arrangement.
+ *
+ * IT READS THE `--aib-` TOKENS AND DEFINES NONE OF ITS OWN. One palette, one place, one set of
+ * measured contrast ratios — see `packages/ui/src/styles.css`. A second palette here is how the
+ * dashboard's header ends up 3.9:1 while everything else is 7:1.
+ *
+ * THE EDITOR'S BREAKPOINT IS 900px AND IT IS WRITTEN IN TWO FILES, which is one more than ideal:
+ * here, and in `EditSheet`'s own rules. They must agree, because at a width where the grid has put
+ * the panel in a left column and the sheet still thinks it is a bottom sheet, the panel is a
+ * fixed-position overlay on top of a column of empty space. `--aib-editor-breakpoint` documents the
+ * number; CSS media queries cannot interpolate a custom property, so the literal is repeated and
+ * this comment is the link between them.
+ */
+
+body {
+  margin: 0;
+  font-family: var(--aib-font);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--aib-text);
+  background: var(--aib-bg-sunken);
+}
+
+a {
+  color: var(--aib-accent);
+}
+
+/* -- Shell ------------------------------------------------------------------------------------ */
+
+.app-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--aib-gap);
+  padding: 12px 20px;
+  background: var(--aib-bg-raised);
+  border-block-end: 1px solid var(--aib-border);
+}
+
+.app-shell__brand {
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--aib-text);
+}
+
+.app-nav,
+.app-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.app-nav__link,
+.app-subnav__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--aib-tap);
+  padding: 0 12px;
+  border-radius: var(--aib-radius);
+  text-decoration: none;
+  color: var(--aib-text-muted);
+}
+
+/* The current item is bold AND underlined AND has a background: `aria-current` carries it for a
+   screen reader, and three visual signals mean colour is never the only one (SC 1.4.1). */
+.app-nav__link.is-current,
+.app-subnav__link.is-current {
+  color: var(--aib-text);
+  font-weight: 700;
+  text-decoration: underline;
+  background: var(--aib-bg-sunken);
+}
+
+.app-shell__identity {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-shell__who {
+  color: var(--aib-text-muted);
+}
+
+.app-shell__main,
+.app-narrow {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+
+.app-narrow {
+  max-width: 32rem;
+}
+
+.app-site {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-site__heading {
+  padding: 16px 20px 0;
+  max-width: 68rem;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.app-site__org {
+  margin: 0;
+  color: var(--aib-text-muted);
+}
+
+.app-site__slug {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.app-subnav {
+  max-width: 68rem;
+  margin: 0 auto;
+  width: 100%;
+  padding: 8px 20px 0;
+}
+
+/* -- Content blocks --------------------------------------------------------------------------- */
+
+.app-facts {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) 1fr;
+  gap: 4px 16px;
+  margin: 0 0 24px;
+}
+
+.app-facts dt {
+  font-weight: 600;
+  color: var(--aib-text-muted);
+}
+
+.app-facts dd {
+  margin: 0;
+}
+
+.app-notice {
+  border: 1px solid var(--aib-border-strong);
+  border-inline-start-width: 4px;
+  border-radius: var(--aib-radius);
+  padding: 12px 16px;
+  margin-block-end: var(--aib-gap);
+  background: var(--aib-bg-raised);
+}
+
+.app-hint,
+.app-site-card__meta,
+.app-media-card__meta {
+  margin: 4px 0;
+  color: var(--aib-text-muted);
+  font-size: 0.875rem;
+}
+
+.app-error-text {
+  color: var(--aib-danger);
+}
+
+.app-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  border: 1px solid var(--aib-border-strong);
+}
+
+.app-badge--warn {
+  border-color: var(--aib-danger);
+  color: var(--aib-danger);
+}
+
+.app-site-list,
+.app-media-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+}
+
+.app-site-card,
+.app-media-card {
+  background: var(--aib-bg-raised);
+  border: 1px solid var(--aib-border);
+  border-radius: var(--aib-radius);
+  padding: 16px;
+}
+
+.app-site-card__title {
+  margin: 0 0 4px;
+  font-size: 1.0625rem;
+}
+
+.app-media-card__image {
+  width: 100%;
+  height: auto;
+  border-radius: var(--aib-radius);
+  background: var(--aib-bg-sunken);
+}
+
+.app-activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-activity li {
+  padding: 8px 0;
+  border-block-end: 1px solid var(--aib-border);
+}
+
+.app-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.app-table th,
+.app-table td {
+  text-align: start;
+  padding: 8px 12px;
+  border-block-end: 1px solid var(--aib-border);
+}
+
+.app-empty {
+  background: var(--aib-bg-raised);
+  border: 1px dashed var(--aib-border-strong);
+  border-radius: var(--aib-radius);
+  padding: 32px;
+  text-align: center;
+}
+
+/* -- The editor ------------------------------------------------------------------------------- */
+
+/*
+ * Desktop: panel left, preview right, both full height, neither scrolling the page.
+ * `100dvh` and not `100vh`: the mobile URL bar changes the viewport height, and `vh` leaves the
+ * bottom of the preview under the browser chrome.
+ */
+.app-editor {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 0;
+  height: calc(100dvh - 64px);
+}
+
+.app-preview {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  background: var(--aib-bg-sunken);
+}
+
+.app-preview__frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #ffffff;
+}
+
+.app-editor__context {
+  display: grid;
+  gap: 4px;
+  margin-block-end: var(--aib-gap);
+}
+
+.app-editor__tabs {
+  display: flex;
+  gap: 4px;
+  margin-block-end: var(--aib-gap);
+}
+
+.app-editor__history {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block-start: 24px;
+  padding-block-start: 16px;
+  border-block-start: 1px solid var(--aib-border);
+}
+
+.app-editor__status {
+  margin: 0;
+  color: var(--aib-text-muted);
+  font-size: 0.875rem;
+}
+
+.app-panel__heading {
+  margin: 24px 0 8px;
+  font-size: 0.9375rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--aib-text-muted);
+}
+
+.app-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-block-end: 1px solid var(--aib-border);
+}
+
+.app-panel__rowLabel {
+  flex: 1 1 8rem;
+  font-weight: 600;
+}
+
+.app-panel__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--aib-tap);
+  font-size: 0.875rem;
+}
+
+@media (min-width: 900px) {
+  /* Panel LEFT, preview right — the requirement, and the order in the DOM already matches, so the
+     tab order goes panel → preview without any positional trickery. */
+  .app-editor {
+    grid-template-columns: minmax(20rem, 24rem) 1fr;
+  }
+}
+
+@media (max-width: 899px) {
+  /* The sheet is fixed to the bottom, so the preview owns the whole viewport underneath it and the
+     bottom padding keeps the last of the page reachable above the collapsed handle. */
+  .app-editor {
+    height: calc(100dvh - 56px);
+  }
+
+  .app-preview {
+    padding-block-end: 60px;
+  }
+}

@@ -22,6 +22,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import { cssVars, useMotionTiming } from '../lib/motion';
 
+import { ACT_DESIGN, ACT_MEDIA } from './acts';
 import styles from './Generation.module.css';
 
 /** Duration of the size interpolation when a skeleton becomes text. */
@@ -129,7 +130,7 @@ function Slot({
 export interface SkeletonMorphProps {
   /** Slot id → the text that has arrived for it. Missing keys render as skeletons. */
   readonly slots: ReadonlyMap<string, string>;
-  /** The current act, 0–8. Drives the palette and image reveals. */
+  /** The current act, 0–9. Drives the palette and image reveals. */
   readonly act: number;
   /** The business name, painted into the preview's chrome from the first frame. */
   readonly businessName: string;
@@ -154,10 +155,10 @@ export default function SkeletonMorph({ slots, act, businessName }: SkeletonMorp
         <span className={styles.previewTitle}>{businessName}</span>
       </div>
 
-      <div className={`${styles.previewBody} ${act >= 2 ? styles.previewThemed : ''}`}>
-        {/* Act 2 paints the palette: five swatches wipe across before any copy exists, which is the
-            first visible proof that the design is being chosen for this business. */}
-        <div className={`${styles.palette} ${act >= 2 ? styles.paletteOn : ''}`}>
+      <div className={`${styles.previewBody} ${act >= ACT_DESIGN ? styles.previewThemed : ''}`}>
+        {/* The design act paints the palette: five swatches wipe across before any copy exists,
+            which is the first visible proof that the design is being chosen for this business. */}
+        <div className={`${styles.palette} ${act >= ACT_DESIGN ? styles.paletteOn : ''}`}>
           {[0, 1, 2, 3, 4].map((index) => (
             <span
               key={index}
@@ -167,7 +168,9 @@ export default function SkeletonMorph({ slots, act, businessName }: SkeletonMorp
           ))}
         </div>
 
-        <div className={`${styles.previewMedia} ${act >= 5 ? styles.previewMediaResolved : ''}`} />
+        <div
+          className={`${styles.previewMedia} ${act >= ACT_MEDIA ? styles.previewMediaResolved : ''}`}
+        />
 
         {PREVIEW_SLOTS.map((slot) => (
           <Slot key={slot} slot={slot} text={slots.get(slot) ?? null} reduced={timing.reduced} />

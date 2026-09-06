@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 
-import type { AppEnv } from '../env';
+import type { AppEnv, Env } from '../env';
 import { errorResponse } from '../lib/responses';
 
 /**
@@ -8,7 +8,9 @@ import { errorResponse } from '../lib/responses';
  *
  * This is the cheapest layer that can refuse a forged request, and it is written to be boring:
  *
- *  - **`Origin === APP_ORIGIN`, compared with `===`.** No regex, no suffix match, no `endsWith`.
+ *  - **`Origin` is `APP_ORIGIN` or `DASHBOARD_ORIGIN`, compared with `===`.** No regex, no suffix
+ *    match, no `endsWith`. The dashboard joined the list in Phase 2 because it calls the auth and
+ *    billing routes on this Worker.
  *    `/mijnsaas\.com$/` matches `evilmijnsaas.com`, and a suffix test on the control-plane domain
  *    is a working CSRF against every state-changing route at once.
  *  - **A missing `Origin` on a state-changing method is a rejection, not a pass.** Treating absence
@@ -40,9 +42,31 @@ const ALLOWED_HEADERS = 'content-type, last-event-id';
 /** How long a preflight may be cached. Ten minutes: long enough to matter, short enough to change. */
 const PREFLIGHT_MAX_AGE = '600';
 
-/** True when the request carries exactly the configured application origin. */
-export function isAppOrigin(origin: string | undefined, appOrigin: string): boolean {
-  return origin !== undefined && origin === appOrigin;
+/**
+ * The exact origins allowed to call this Worker: the marketing site and the dashboard.
+ *
+ * Two entries, both compared with `===`. Never a regex and never a suffix test — `/mijnsaas\.com$/`
+ * matches `evilmijnsaas.com`, and that is the whole class of bug this function exists to preclude.
+ */
+export function allowedOrigins(
+  env: Pick<Env, 'APP_ORIGIN' | 'DASHBOARD_ORIGIN'>,
+): readonly string[] {
+  return [env.APP_ORIGIN, env.DASHBOARD_ORIGIN];
+}
+
+/**
+ * The caller's origin when it is one of ours, otherwise `null`.
+ *
+ * Returns the MATCHED origin rather than a boolean because the CORS response has to echo the origin
+ * that actually called — echoing `APP_ORIGIN` at a dashboard request produces a header the browser
+ * rejects, which is a silent, confusing failure at exactly the surface a customer pays on.
+ */
+export function matchedOrigin(
+  origin: string | undefined,
+  env: Pick<Env, 'APP_ORIGIN' | 'DASHBOARD_ORIGIN'>,
+): string | null {
+  if (origin === undefined) return null;
+  return allowedOrigins(env).includes(origin) ? origin : null;
 }
 
 /** 403 for a request whose `Origin` is absent or not the application's. Never says which. */
@@ -65,16 +89,16 @@ function originRejected(): Response {
  */
 export const appCors: MiddlewareHandler<AppEnv> = async (c, next) => {
   const origin = c.req.header('Origin');
-  const matches = isAppOrigin(origin, c.env.APP_ORIGIN);
+  const matched = matchedOrigin(origin, c.env);
 
   if (c.req.method === 'OPTIONS') {
-    if (!matches) {
+    if (matched === null) {
       return originRejected();
     }
     return new Response(null, {
       status: 204,
       headers: {
-        'access-control-allow-origin': c.env.APP_ORIGIN,
+        'access-control-allow-origin': matched,
         'access-control-allow-credentials': 'true',
         'access-control-allow-methods': ALLOWED_METHODS,
         'access-control-allow-headers': ALLOWED_HEADERS,
@@ -86,15 +110,15 @@ export const appCors: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   await next();
 
-  if (matches) {
-    c.res.headers.set('access-control-allow-origin', c.env.APP_ORIGIN);
+  if (matched !== null) {
+    c.res.headers.set('access-control-allow-origin', matched);
     c.res.headers.set('access-control-allow-credentials', 'true');
   }
   c.res.headers.append('vary', 'Origin');
 };
 
 /**
- * Rejects any state-changing request that does not carry exactly `APP_ORIGIN`.
+ * Rejects any state-changing request whose `Origin` is not one of ours.
  *
  * Guarantees that `POST`, `PUT`, `PATCH` and `DELETE` reach a route handler only with a present,
  * exactly-matching `Origin` header. Safe methods pass through untouched: `GET /claim` is a link in
@@ -105,7 +129,7 @@ export const originGuard: MiddlewareHandler<AppEnv> = async (c, next) => {
     await next();
     return;
   }
-  if (!isAppOrigin(c.req.header('Origin'), c.env.APP_ORIGIN)) {
+  if (matchedOrigin(c.req.header('Origin'), c.env) === null) {
     return originRejected();
   }
   await next();

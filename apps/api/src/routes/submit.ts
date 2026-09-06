@@ -36,24 +36,42 @@ import {
 import { requireAnonSession } from '../middleware/draft-cookie';
 import { rateLimitByIp } from '../middleware/ratelimit';
 import { TURNSTILE_ACTION_SUBMIT, verifyTurnstile } from '../middleware/turnstile';
+import {
+  SQL_ATTACH_CHECKOUT_SESSION,
+  SQL_INSERT_GENERATION_JOB_AWAITING_PAYMENT,
+  checkoutOutcomeResponse,
+  createCheckoutSession,
+  ensureCheckoutSession,
+  getPaymentJob,
+  trialAlreadyUsedResponse,
+} from './billing';
+import type { PaymentState } from './billing';
 import { currentDraft } from './drafts';
 
 /**
  * `POST /v1/onboarding/submit` — the whole funnel, in order.
  *
- * Turnstile → Zod → `QuotaDO` → `BudgetDO` → Haiku policy screen → one control-plane `batch()` →
- * the shard's job row → Workflow dispatch. The order is not arbitrary: each layer is cheaper than
- * the one after it, and the two that cost money (the policy screen, and the generation itself) are
- * last (architecture §8).
+ * Turnstile → Zod → `QuotaDO` → `BudgetDO` → Haiku policy screen → the prior-trial screen → one
+ * control-plane `batch()` → the shard's job row → a Stripe Checkout Session. The order is not
+ * arbitrary: each layer is cheaper than the one after it, and the two that cost money (the policy
+ * screen, and the generation itself) are last (architecture §8).
+ *
+ * THIS ROUTE NO LONGER DISPATCHES ANYTHING. DECISIONS §D2 inverted the funnel: the 7-day trial
+ * happens BEFORE the first generation, so submit returns a Checkout URL and the
+ * `checkout.session.completed` webhook dispatches the Workflow. The `success_url` redirect never
+ * does — a redirect is a browser navigation, not a payment guarantee, and the customer can close
+ * the tab before it fires. The job row is written with `payment_state='awaiting_payment'` and
+ * `queue_ready_at IS NULL`, which the drain's partial index cannot see, so no Opus can be spent
+ * until money is on the table.
  *
  * THE CLIENT CANNOT SUPPLY AN IDEMPOTENCY KEY. The key was minted at draft creation, is stored on
  * the draft row, and keys `uq_jobs_idem(org_id, idempotency_key)`. Architecture §5.4 adopted the
  * org scoping because a globally unique, client-supplied, ULID-shaped key was simultaneously a
  * cross-tenant denial of service and an existence oracle for other tenants' job ids.
  *
- * WHAT HAPPENS WHEN SOMETHING FAILS HALF-WAY. The control plane and the shard are two databases and
- * no transaction spans them, so the sequence is chosen so that every partial state is recoverable
- * by simply calling this route again:
+ * WHAT HAPPENS WHEN SOMETHING FAILS HALF-WAY. The control plane, the shard and Stripe are three
+ * systems and no transaction spans them, so the sequence is chosen so that every partial state is
+ * recoverable by simply calling this route again:
  *
  *   - The CP batch is atomic. A concurrent second submit either loses the `status = 'open'`
  *     predicate on the draft transition or collides on the total unique index over `sites.slug`;
@@ -61,13 +79,20 @@ import { currentDraft } from './drafts';
  *   - If the CP batch commits and the shard write fails, the draft is `submitted` with a job id
  *     whose row does not exist. The replay path detects exactly that and re-creates the row with
  *     the SAME id, which is why the ids are minted before either write rather than by either write.
- *   - If the budget was reserved and the dispatch then failed, the reservation is settled at zero
- *     so the daily counter cannot ratchet against a generation that never happened.
+ *   - If the job row exists and the Checkout Session cannot be created, the answer is
+ *     `402 checkout_unavailable` carrying the job id. Nothing the customer entered is lost:
+ *     `POST /v1/billing/checkout/:jobId` mints a session for that same job later, and a replayed
+ *     submit does the same thing on its own.
+ *   - If Stripe creates a session and the row that records it cannot be written, the webhook has
+ *     already won the race or is about to; the replay path re-reads `payment_state` and answers
+ *     with whatever it now holds. A session nobody uses expires in thirty minutes and is free.
  *
- * NOTHING IS EVER LOST TO A BUDGET CEILING. Over the staged thresholds the rows are still written —
- * organisation, user, site, media hand-off, job — and only the dispatch is withheld. The customer
- * gets an honest "we'll e-mail you within the hour", we get a human review queue, and no money is
- * spent (architecture §8, staged degradation).
+ * THE BUDGET RESERVATION DOES NOT SURVIVE THE RESPONSE. No Opus spend has been authorised at this
+ * point — the customer has not paid yet — so the reservation is settled at zero on every path
+ * before the answer is written, and the generator re-reserves at dispatch, which is the moment
+ * spend actually becomes imminent. The QUOTA is deliberately not released: a submit consumes a
+ * generation slot whether or not the card lands, otherwise abandoning Checkout in a loop is a free
+ * slug-reservation and draft-row generator.
  */
 
 /** Abuse signals are kept for 90 days, then purged by cron. */
@@ -76,20 +101,37 @@ const ABUSE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 /** A claimed draft is the fact source publish projects from, so it outlives the 30-day purge. */
 const CLAIMED_DRAFT_RETENTION_MS = 3650 * 24 * 60 * 60 * 1000;
 
-/** The generator's internal API. No public route exists; the service binding is the only path. */
+/** The generator's internal API. Used by the policy screen only; dispatch belongs to the webhook. */
 const GENERATOR_ORIGIN = 'https://generator.internal';
+
+/**
+ * The `payment_deadline_at` a job is created with, before Stripe's own `expires_at` replaces it.
+ *
+ * Thirty minutes, matching the session TTL, so a job whose Checkout Session could not be created at
+ * all still has a deadline the sweep can find it by.
+ */
+const CHECKOUT_DEADLINE_FALLBACK_MS = 30 * 60 * 1000;
 
 /** The Turnstile token travels alongside the intake rather than inside it. */
 const TurnstileEnvelopeSchema = z.object({
   turnstileToken: z.string().min(1).max(4096),
 });
 
-/** The 202/200 body. */
+/**
+ * The 202/200 body.
+ *
+ * `checkoutUrl` and `checkoutExpiresAt` are nullable rather than optional: with
+ * `exactOptionalPropertyTypes` on, an absent-or-present field is a worse contract for a client than
+ * one that is always there and sometimes `null`, and the modal branches on the value either way.
+ */
 interface SubmitAcceptedBody {
   readonly jobId: string;
   readonly slug: string;
   readonly siteUrl: string;
   readonly eventsUrl: string;
+  readonly paymentState: PaymentState;
+  readonly checkoutUrl: string | null;
+  readonly checkoutExpiresAt: number | null;
 }
 
 export const submitRoutes = new Hono<AppEnv>();
@@ -164,46 +206,13 @@ async function screenPolicy(
   }
 }
 
-/**
- * Dispatches the Workflow through the generator's service binding.
- *
- * Identifiers only. The generator holds both D1 bindings and reads the draft itself, which keeps
- * the intake — including the fields that never reach a model — out of a second hop.
- *
- * Returns `true` when the run is now the generator's problem. A 409 counts as success: the
- * Workflow instance id IS the job id, so a duplicate create means the run already exists, which is
- * exactly the outcome the caller wanted.
- */
-async function dispatchGeneration(
-  env: Env,
-  args: {
-    readonly jobId: string;
-    readonly orgId: string;
-    readonly siteId: string;
-    readonly draftId: string;
-    readonly shardId: number;
-    readonly slug: string;
-    readonly canonicalHost: string;
-  },
-): Promise<boolean> {
-  try {
-    const response = await env.GENERATOR.fetch(`${GENERATOR_ORIGIN}/v1/generations`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(args),
-    });
-    return response.ok || response.status === 409;
-  } catch {
-    return false;
-  }
-}
-
 /** Records one abuse signal. Fire-and-forget: telemetry must never fail a user's request. */
 async function recordAbuse(
   env: Env,
   args: {
     readonly kind:
       'turnstile_fail' | 'quota_exceeded' | 'policy_reject' | 'budget_deferred' | 'slug_blocked';
+    /** `quota_exceeded` doubles as the prior-trial refusal; the reason travels in `detail`. */
     readonly severity: 'info' | 'warn' | 'block';
     readonly draft: OnboardingDraftRow;
     readonly detail: string | null;
@@ -283,12 +292,24 @@ async function briefDigest(intake: Intake): Promise<Uint8Array> {
 }
 
 /** The accepted body for a job that exists. */
-function acceptedBody(env: Env, jobId: string, slug: string): SubmitAcceptedBody {
+function acceptedBody(
+  env: Env,
+  jobId: string,
+  slug: string,
+  payment: {
+    readonly paymentState: PaymentState;
+    readonly checkoutUrl: string | null;
+    readonly checkoutExpiresAt: number | null;
+  },
+): SubmitAcceptedBody {
   return {
     jobId,
     slug,
     siteUrl: `https://${slug}.${env.SITES_ROOT_DOMAIN}`,
     eventsUrl: `/v1/jobs/${jobId}/events`,
+    paymentState: payment.paymentState,
+    checkoutUrl: payment.checkoutUrl,
+    checkoutExpiresAt: payment.checkoutExpiresAt,
   };
 }
 
@@ -304,6 +325,11 @@ function acceptedBody(env: Env, jobId: string, slug: string): SubmitAcceptedBody
  * with the stored ids is safe — `uq_jobs_idem(org_id, idempotency_key)` makes a duplicate insert
  * fail rather than double-bill — and it turns a 500 into a retry the client already knows how to
  * make.
+ *
+ * The second branch is DECISIONS §D2's: a job still waiting for payment gets the LIVE Checkout URL
+ * back, or a fresh session when the stored one has expired. A customer who reloads the modal after
+ * closing the Stripe tab is the ordinary case, and answering it with "this form has already been
+ * completed" would strand a paying customer behind a form they cannot re-open.
  */
 async function replaySubmitted(env: Env, draft: OnboardingDraftRow): Promise<Response> {
   if (draft.status === 'rejected') {
@@ -335,7 +361,7 @@ async function replaySubmitted(env: Env, draft: OnboardingDraftRow): Promise<Res
   }
 
   const db = shardById(draft.shard_id, env);
-  const job = await shard.generationJobs.getGenerationJob(db, draft.generation_job_id);
+  const job = await getPaymentJob(db, draft.generation_job_id);
   if (job === null) {
     return errorResponse(
       409,
@@ -345,7 +371,36 @@ async function replaySubmitted(env: Env, draft: OnboardingDraftRow): Promise<Res
     );
   }
 
-  return jsonResponse(acceptedBody(env, job.id, site.slug), 200);
+  if (job.payment_state === 'awaiting_payment' || job.payment_state === 'abandoned') {
+    const outcome = await ensureCheckoutSession(env, {
+      draft,
+      job,
+      orgId: draft.org_id,
+      db,
+    });
+    if (outcome.kind === 'created') {
+      return jsonResponse(
+        acceptedBody(env, job.id, site.slug, {
+          paymentState: 'awaiting_payment',
+          checkoutUrl: outcome.session.checkoutUrl,
+          checkoutExpiresAt: outcome.session.expiresAt,
+        }),
+        200,
+      );
+    }
+    if (outcome.kind !== 'already_paid') {
+      return checkoutOutcomeResponse(env, job.id, outcome);
+    }
+  }
+
+  return jsonResponse(
+    acceptedBody(env, job.id, site.slug, {
+      paymentState: job.payment_state,
+      checkoutUrl: null,
+      checkoutExpiresAt: null,
+    }),
+    200,
+  );
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -517,9 +572,32 @@ submitRoutes.post('/submit', requireAnonSession, rateLimitByIp('RL_SUBMIT'), asy
     );
   }
 
-  // ---- Identity ---------------------------------------------------------------------------------
+  // ---- The prior-trial screen, before any row is written -----------------------------------------
+  //
+  // DECISIONS §D2 asks for a lookup by `email_normalized` AND by `card.fingerprint`. Only the first
+  // can run here: the fingerprint is a property of a PaymentMethod that does not exist until the
+  // customer has typed a card into Checkout, so its half runs in the webhook (design §5.1).
+  //
+  // 409 and not 402: nothing about the request is unpaid, the identity is ineligible. It runs after
+  // the slug so that a returning customer is told the truth about their account rather than about
+  // their web address, and BEFORE the batch so that a refusal writes nothing at all.
   const now = Date.now();
   const emailNormalized = normalizeEmail(intake.contactEmail);
+  const priorTrial = await cp.billing.findTrialByEmail(c.env.CP, emailNormalized);
+  if (priorTrial !== null) {
+    await releaseReservations();
+    c.executionCtx.waitUntil(
+      recordAbuse(c.env, {
+        kind: 'quota_exceeded',
+        severity: 'warn',
+        draft,
+        detail: 'prior_trial_email',
+      }),
+    );
+    return trialAlreadyUsedResponse(c.env);
+  }
+
+  // ---- Identity ---------------------------------------------------------------------------------
   const existingUser = await cp.users.getUserByEmail(c.env.CP, emailNormalized);
   const userId: UserId = existingUser?.id ?? mintId('user');
   const orgId: OrganisationId = mintId('organisation');
@@ -621,22 +699,23 @@ submitRoutes.post('/submit', requireAnonSession, rateLimitByIp('RL_SUBMIT'), asy
   const promptSha256 = await briefDigest(intake);
   try {
     const shardResults = await runBatch(db, [
-      db
-        .prepare(shard.generationJobs.SQL_INSERT_GENERATION_JOB)
-        .bind(
-          jobId,
-          orgId,
-          siteId,
-          draft.id,
-          'initial_site',
-          0,
-          draft.idempotency_key,
-          now,
-          toArrayBuffer(promptSha256),
-          null,
-          GENERATION_ESTIMATE_USD_MICRO,
-          null,
-        ),
+      db.prepare(SQL_INSERT_GENERATION_JOB_AWAITING_PAYMENT).bind(
+        jobId,
+        orgId,
+        siteId,
+        draft.id,
+        draft.idempotency_key,
+        toArrayBuffer(promptSha256),
+        GENERATION_ESTIMATE_USD_MICRO,
+        // `created_by` is set now that the user row exists in the same submit: the Checkout
+        // return route mints a browser session from it rather than re-deriving the identity.
+        userId,
+        // A placeholder deadline, immediately overwritten with Stripe's own `expires_at`. It
+        // exists so that a job whose session creation fails is still reaped by the deadline
+        // sweep rather than sitting in `awaiting_payment` forever.
+        now + CHECKOUT_DEADLINE_FALLBACK_MS,
+        now,
+      ),
       shard.media.promoteDraftMediaStatement(db, { draftId: draft.id, siteId, orgId, now }),
     ]);
     const inserted = shardResults[0];
@@ -656,54 +735,67 @@ submitRoutes.post('/submit', requireAnonSession, rateLimitByIp('RL_SUBMIT'), asy
     );
   }
 
-  // ---- Dispatch, or defer -----------------------------------------------------------------------
+  // ---- Release the reservation, then hand the customer to Stripe -------------------------------
+  //
+  // The reservation is settled at zero on EVERY path from here: no Opus spend has been authorised,
+  // and a reservation must not sit against the daily ceiling for the thirty minutes the customer
+  // spends deciding. The generator re-reserves when the webhook releases the job, which is the
+  // moment spend actually becomes imminent.
+  if (budget.reservationId !== null) {
+    await settleBudget(c.env, { reservationId: budget.reservationId, actualMicro: 0 });
+  }
   if (mode !== 'allow') {
+    // The ceiling no longer withholds anything at submit — there is nothing to withhold, because
+    // this route stopped dispatching. The signal is still recorded, because "how close to the
+    // ceiling were we when this cohort signed up" is the question the degradation ladder was built
+    // to answer, and the generator's dispatcher re-consults `BudgetDO` before it spends.
     c.executionCtx.waitUntil(
       recordAbuse(c.env, { kind: 'budget_deferred', severity: 'info', draft, detail: cause }),
     );
-    // The job row exists with its queue sentinel set, so the generator's drain picks it up when the
-    // ceiling allows. Nothing the customer entered is lost, and nothing has been spent.
-    if (budget.reservationId !== null) {
-      await settleBudget(c.env, { reservationId: budget.reservationId, actualMicro: 0 });
-    }
-    return errorResponse(
-      402,
-      'budget_deferred',
-      mode === 'confirm_email'
-        ? 'Bevestig je e-mailadres, dan starten we direct met bouwen.'
-        : 'Het is nu erg druk. We e-mailen je binnen een uur zodra je site klaarstaat.',
-      mode === 'confirm_email'
-        ? 'Confirm your e-mail address and we will start building right away.'
-        : 'It is very busy right now. We will e-mail you within the hour once your site is ready.',
-      { mode, cause },
-    );
   }
 
-  const dispatched = await dispatchGeneration(c.env, {
-    jobId,
+  const checkout = await createCheckoutSession(c.env, {
     orgId,
-    siteId,
-    draftId: draft.id,
-    shardId: draft.shard_id,
-    slug,
-    canonicalHost,
+    jobId,
+    email: intake.contactEmail,
+    emailNormalized,
+    businessName: intake.businessName,
+    locale,
+    attempt: 1,
   });
-  if (!dispatched) {
-    if (budget.reservationId !== null) {
-      await settleBudget(c.env, { reservationId: budget.reservationId, actualMicro: 0 });
-    }
-    // The job row is queued and durable; the drain will find it. This is a deferral, not a loss,
-    // and it is reported as one.
-    return errorResponse(
-      402,
-      'budget_deferred',
-      'Het is nu erg druk. We e-mailen je binnen een uur zodra je site klaarstaat.',
-      'It is very busy right now. We will e-mail you within the hour once your site is ready.',
-      { mode: 'queued', cause: 'dispatch' },
+  if (checkout.kind !== 'created') {
+    // The job row exists and is durable. `POST /v1/billing/checkout/:jobId` mints a session for it
+    // later, and a replayed submit does the same — nothing the customer entered is lost.
+    return checkoutOutcomeResponse(c.env, jobId, checkout);
+  }
+
+  const attached = await db
+    .prepare(SQL_ATTACH_CHECKOUT_SESSION)
+    .bind(jobId, checkout.session.checkoutSessionId, checkout.session.expiresAt, Date.now())
+    .run();
+  if (attached.meta.changes !== 1) {
+    // `changes === 0` means the webhook already won the race: the customer paid before this
+    // statement landed, which is possible because Stripe is fast. Not an error — the row is re-read
+    // and the answer carries whatever `payment_state` it now holds.
+    const current = await getPaymentJob(db, jobId);
+    return jsonResponse(
+      acceptedBody(c.env, jobId, slug, {
+        paymentState: current?.payment_state ?? 'paid',
+        checkoutUrl: null,
+        checkoutExpiresAt: null,
+      }),
+      200,
     );
   }
 
-  return jsonResponse(acceptedBody(c.env, jobId, slug), 202);
+  return jsonResponse(
+    acceptedBody(c.env, jobId, slug, {
+      paymentState: 'awaiting_payment',
+      checkoutUrl: checkout.session.checkoutUrl,
+      checkoutExpiresAt: checkout.session.expiresAt,
+    }),
+    202,
+  );
 });
 
 /** Exported for the claim route, which pushes a claimed draft's retention out to match its site. */

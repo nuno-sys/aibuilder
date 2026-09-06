@@ -159,6 +159,72 @@
   color: var(--danger-700);
 }
 
+/* --- The payment act ---------------------------------------------------------------------------
+ *
+ * Deliberately NEUTRAL, not amber. Waiting for a webhook is a normal state of the system, and
+ * colouring a normal state as a warning is how a product teaches people to ignore warnings. The
+ * expired-link card reuses it for the same reason: a link that timed out is not an error the
+ * customer made.
+ * ---------------------------------------------------------------------------------------------- */
+
+.payment {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.paymentTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+/* The only motion in this act, and it is the honest kind: it says "we are still here", not "we are
+   making progress". The rail itself stays still. */
+.paymentPulse {
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--radius-full);
+  /* `currentColor` rather than a literal: `--fg-brand` is redefined in the dark theme (brand-300,
+     8.1:1 on near-black), and a hard-coded brand-600 ring would disappear there. */
+  color: var(--fg-brand);
+  background: currentColor;
+  animation: payment-pulse 1600ms var(--ease-in-out) infinite;
+}
+
+@keyframes payment-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, currentColor 0%, transparent);
+  }
+}
+
+.paymentBody {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-secondary);
+}
+
+.paymentNote {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--fg-tertiary);
+}
+
 /* --- Stage and preview ------------------------------------------------------------------------- */
 
 .stage {
@@ -494,6 +560,14 @@
     transform: none;
   }
 
+  /* `base.css` collapses every duration to 0.01 ms with `!important`, which lands a keyframe
+     animation on its FINAL frame rather than stopping it. Naming the animation away is the only
+     reliable off switch, and the dot's resting appearance — a solid brand dot — is exactly the
+     static indicator this state wants. */
+  .paymentPulse {
+    animation: none;
+  }
+
   .paletteOn .swatch {
     transform: scaleX(1);
   }
@@ -514,6 +588,14 @@
 @media (forced-colors: active) {
   .barFill {
     background: Highlight;
+  }
+
+  .payment {
+    border: 1px solid CanvasText;
+  }
+
+  .paymentPulse {
+    color: CanvasText;
   }
 
   .preview,

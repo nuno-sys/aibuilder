@@ -157,6 +157,15 @@ export interface SiteGenerationParams {
 
 /** The generator Worker's environment. */
 export interface Env extends ShardBindings {
+  /**
+   * host -> `RoutingManifest`. The publish pointer.
+   *
+   * Written LAST by `core/publish.ts`: SiteDoc -> R2, projection -> shard D1, HTML -> R2, then
+   * this. The version is in the cache key, so flipping it makes the new version live and the
+   * old entries unreachable — there is no purge call and no purge race.
+   */
+  readonly ROUTING: KVNamespace;
+
   /** Control plane. The draft, its policy verdict and the site's identity row. */
   readonly CP: D1Database;
 

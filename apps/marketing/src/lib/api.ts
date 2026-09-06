@@ -424,13 +424,50 @@ export interface MediaStatusResponse {
   readonly dominantColor: string | null;
 }
 
-/** `POST /v1/onboarding/submit` — 202 on the first call, 200 on an idempotent replay. */
+/**
+ * Where a job stands with respect to the trial (`generation_jobs.payment_state`).
+ *
+ * Orthogonal to `status`. `awaiting_payment` is a job that exists, holds a reserved slug and a
+ * promoted media set, and will not run until the `checkout.session.completed` webhook releases it —
+ * so it is emphatically not a failure, and the UI must never render it as one.
+ */
+export type PaymentState = 'not_required' | 'awaiting_payment' | 'paid' | 'abandoned';
+
+/**
+ * `POST /v1/onboarding/submit` — 202 on the first call, 200 on an idempotent replay.
+ *
+ * Under the trial-first funnel (DECISIONS §D2) this route dispatches nothing. It reserves the slug,
+ * writes the job in `awaiting_payment` and hands back a Stripe Checkout URL; the Workflow is started
+ * by the webhook. The three payment fields are typed OPTIONAL rather than required even though the
+ * route always sends them, so that a modal deployed ahead of the API — the ordinary state of affairs
+ * for ten minutes during a rollout — degrades to the Phase 1 behaviour (straight into the theatre)
+ * instead of rendering `undefined` into the conversion screen.
+ */
 export interface SubmitResponse {
   readonly jobId: string;
   readonly slug: string;
   readonly siteUrl: string;
   /** Path, not an absolute URL: `/v1/jobs/job_…/events`. */
   readonly eventsUrl: string;
+  readonly paymentState?: PaymentState;
+  /** Absolute `https://checkout.stripe.com/…`. Absent when no payment is required. */
+  readonly checkoutUrl?: string;
+  /** Epoch milliseconds. Stripe's own `expires_at`, 30 minutes out. */
+  readonly checkoutExpiresAt?: number;
+}
+
+/**
+ * `POST /v1/billing/checkout/:jobId` — mints a fresh Checkout Session for a job that already exists.
+ *
+ * The recovery path for every way the first session can be lost: the customer pressed Back, the
+ * 30-minute window expired, or `submit` answered `402 checkout_unavailable` because Stripe was down
+ * at exactly the wrong moment. Capped server-side at five sessions per job for its whole life.
+ */
+export interface CheckoutSessionResponse {
+  readonly jobId: string;
+  readonly paymentState: PaymentState;
+  readonly checkoutUrl: string;
+  readonly checkoutExpiresAt: number;
 }
 
 /** `GET /v1/jobs/:jobId` — the polling fallback for the SSE stream. */
@@ -441,6 +478,8 @@ export interface JobStatusResponse {
   readonly message: string | null;
   readonly siteUrl?: string;
   readonly error?: string;
+  readonly paymentState?: PaymentState;
+  readonly checkoutExpiresAt?: number;
 }
 
 /* ── Routes ───────────────────────────────────────────────────────────────────────────────────── */
@@ -626,6 +665,27 @@ export function submitOnboarding(
 /** The polling fallback for a job whose SSE stream will not stay up. */
 export function getJobStatus(jobId: string, signal?: AbortSignal): Promise<JobStatusResponse> {
   return request<JobStatusResponse>(`/v1/jobs/${encodeURIComponent(jobId)}`, { signal });
+}
+
+/**
+ * Mints a new Checkout Session for a job that is still `awaiting_payment`.
+ *
+ * NEVER RETRIED, and the reason is not Turnstile this time — this route carries no token. It is that
+ * a 5xx after Stripe has already created the session would create a second one, and each attempt is
+ * counted against a lifetime cap of five (PHASE2-BILLING-AUTH §5.4). Burning the customer's recovery
+ * budget on a response we never saw is exactly the failure the cap exists to prevent. A rate-limit
+ * refusal (`429`) is likewise a decision and not a hiccup: the caller surfaces it and lets the person
+ * press the button again.
+ */
+export function resumeCheckout(
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<CheckoutSessionResponse> {
+  return request<CheckoutSessionResponse>(`/v1/billing/checkout/${encodeURIComponent(jobId)}`, {
+    method: 'POST',
+    retry: false,
+    signal,
+  });
 }
 
 /** Absolute URL of a job's SSE stream, built from the path the submit response returned. */

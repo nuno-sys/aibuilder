@@ -6,7 +6,14 @@
     // `Env` is hand-authored in `src/env.ts` for the reasons stated in that file's header, so the
     // only ambient types this Worker needs are the runtime ones. `cloudflare:workers` and
     // `cloudflare:workflows` module declarations ship inside this package.
-    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"]
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"],
+    // `steps/render.ts` imports `@aibuilder/site-kit`, whose section components are `hono/jsx`
+    // `.tsx` sources. Internal packages are unbuilt (`"exports": { ".": "./src/index.ts" }`), so
+    // this project compiles those files directly and needs the same JSX settings the package's own
+    // tsconfig declares. Nothing in `apps/generator/src` is JSX; this is here purely so the
+    // dependency's sources resolve.
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx"
   },
   "include": ["src/**/*.ts", "vitest.config.ts"]
 }

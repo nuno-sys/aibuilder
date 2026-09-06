@@ -103,6 +103,12 @@ export const TEST_HMAC_KEY_ROTATED = 'k2:ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDM
 /** The origin the tests treat as the application's. */
 export const TEST_APP_ORIGIN = 'https://www.example-control-plane.test';
 
+/** The dashboard's origin. A second allowed `Origin` since Phase 2 — auth and billing use it. */
+export const TEST_DASHBOARD_ORIGIN = 'https://app.example-control-plane.test';
+
+/** This Worker's own origin. Stripe's `success_url` points at a route on it. */
+export const TEST_API_ORIGIN = 'https://api.example-control-plane.test';
+
 /** The vars, secrets and rate limiters every case gets for free. */
 const ENV_DEFAULTS: Readonly<Record<string, unknown>> = {
   IMAGES: null,
@@ -110,6 +116,8 @@ const ENV_DEFAULTS: Readonly<Record<string, unknown>> = {
   RL_SUBMIT: fakeRateLimit(true),
   RL_UPLOAD: fakeRateLimit(true),
   RL_LEADS: fakeRateLimit(true),
+  RL_CHECKOUT: fakeRateLimit(true),
+  RL_AUTH: fakeRateLimit(true),
   TURNSTILE_SECRET: 'test-turnstile-secret',
   DRAFT_HMAC_KEY: TEST_HMAC_KEY,
   IP_SALT: 'test-ip-salt',
@@ -118,6 +126,9 @@ const ENV_DEFAULTS: Readonly<Record<string, unknown>> = {
   GEOCODER_KEY: 'test-geocoder-key',
   ENVIRONMENT: 'staging',
   APP_ORIGIN: TEST_APP_ORIGIN,
+  DASHBOARD_ORIGIN: TEST_DASHBOARD_ORIGIN,
+  API_ORIGIN: TEST_API_ORIGIN,
+  WEBAUTHN_RP_ID: 'app.example-control-plane.test',
   SITES_ROOT_DOMAIN: 'sites.test',
   R2_S3_ENDPOINT: 'https://account.eu.r2.cloudflarestorage.com',
   R2_QUARANTINE_BUCKET: 'aibuilder-quarantine',

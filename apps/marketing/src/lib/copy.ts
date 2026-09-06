@@ -32,6 +32,16 @@ const NL = {
       keepGoing: 'Verder invullen',
       close: 'Sluiten',
     },
+    /* The same nested confirmation, after submit. The wording differs because the facts differ: at
+       this point there is no "concept" any more — there is a reserved web address and a job that is
+       waiting for a trial to start. Reusing `saved` here would tell the user something untrue about
+       the state of their own site. */
+    savedCheckout: {
+      title: 'Je gegevens en je webadres zijn bewaard.',
+      body: 'Je website is nog niet gebouwd — dat begint zodra je proefperiode loopt. Je kunt hier later verder.',
+      keepGoing: 'Verder met de proefperiode',
+      close: 'Sluiten',
+    },
     offline: 'Geen verbinding. Je invoer is bewaard — we gaan verder zodra je weer online bent.',
     conflict: {
       body: 'Je hebt een nieuwer concept op een ander apparaat.',
@@ -47,6 +57,14 @@ const NL = {
     },
     genericError: 'Er ging iets mis. Probeer het zo nog eens.',
     retry: 'Opnieuw proberen',
+    /* `409 trial_already_used`. Not a validation failure and not a payment failure: the request is
+       fine, the identity is not eligible. The copy says which, offers the way in, and does not
+       imply the person did something wrong. */
+    trialUsed: {
+      title: 'Met dit e-mailadres is al een proefperiode gebruikt.',
+      body: 'Elke onderneming krijgt één proefperiode van {days} dagen. Log in met dit adres om verder te gaan, of gebruik het e-mailadres van je onderneming.',
+      signIn: 'Inloggen',
+    },
   },
   rail: {
     label: 'Voortgang',
@@ -160,10 +178,18 @@ const NL = {
       'Sleep ze hierheen of maak nu een foto. Eén goede foto maakt je site 10× persoonlijker.',
     email: 'Waar sturen we de link naartoe?',
     emailHelper:
-      'Je site is over ~1 minuut klaar. We mailen je de link zodat je hem nooit kwijtraakt.',
+      'Hier sturen we de link naartoe zodra je site klaar is — en je factuur en de herinnering vóór het einde van je proefperiode.',
     consent: 'Stuur me tips om meer klanten te krijgen (max 1× per maand).',
     legal: 'Door verder te gaan ga je akkoord met de Voorwaarden en de Privacyverklaring.',
-    trust: ['Gratis', 'Geen creditcard', 'Klaar in ~1 minuut'],
+    /* These three replace Phase 1's 'Gratis · Geen creditcard · Klaar in ~1 minuut'. The middle one
+       became false the day the trial moved in front of the first generation (DECISIONS §D2), and a
+       trust strip that lies is worse than no trust strip. `{days}` and `{today}` are filled from
+       `content/pricing.ts`, so the strip cannot drift from the price the build asserts. */
+    trust: ['{days} dagen gratis proberen', 'Vandaag betaal je {today}', 'Klaar in ~1 minuut'],
+    /* Read immediately above the submit button, inside the sticky footer, so it is on screen at the
+       moment of the irreversible action rather than scrolled away above it. */
+    checkoutNotice:
+      'Hierna reserveren we je webadres en start je de proefperiode bij Stripe. Vandaag betaal je {today}.',
   },
   media: {
     dropzone: 'Sleep je foto’s hierheen',
@@ -198,6 +224,71 @@ const NL = {
       undo: 'Toch zelf foto’s kiezen',
     },
   },
+  /* ── The hand-off to Stripe ────────────────────────────────────────────────────────────────
+     THE CONVERSION POINT OF THE WHOLE PRODUCT, and the one screen where every number must be a
+     number the customer will actually see on a bank statement. Four rules the copy below keeps:
+
+       1. Every figure is stated, none is implied. The annual total, the derived monthly rate, the
+          amount charged today and the VAT basis all appear together — the Omnibus-amended UCPD
+          treats a monthly headline over an annual charge as a misleading omission, and burying the
+          real number one screen further on would be exactly that.
+       2. Cancelling is described before it is asked for, in the same weight as the price.
+       3. The reason a card is needed BEFORE the build is given plainly, because from the customer's
+          side that ordering is surprising and an unexplained surprise reads as a trap.
+       4. No countdown, no scarcity, no pre-ticked anything, no "are you sure you want to miss out".
+          The 30-minute link expiry is stated as a fact about the link, not as pressure. */
+  checkout: {
+    eyebrow: 'Laatste stap',
+    title: 'Klaar om {name} te bouwen.',
+    intro:
+      'Je antwoorden staan klaar en je webadres is voor je gereserveerd. We beginnen met bouwen zodra je proefperiode loopt; daarna duurt het ongeveer een minuut.',
+    reservedLabel: 'Jouw webadres',
+    summaryLabel: 'Wat we gaan bouwen',
+    photos: '{count} eigen foto’s',
+    photosOne: '1 eigen foto',
+    photosNone: 'Beelden die wij voor je uitzoeken',
+    todayLabel: 'Vandaag',
+    todayNote: 'Er wordt vandaag niets afgeschreven.',
+    afterLabel: 'Na {days} dagen',
+    afterAmount: '{annual} per jaar',
+    afterNote:
+      'Dat is {monthly} per maand, één keer per jaar in rekening gebracht. Bedragen zijn exclusief btw; Stripe rekent de btw uit op basis van je land en je btw-nummer.',
+    cancelLabel: 'Opzeggen',
+    cancelNote:
+      'Zeg je binnen {days} dagen op, dan betaal je niets en stopt het abonnement meteen. Je zegt zelf op in je account — geen telefoontje, geen mail, geen opzegtermijn.',
+    cardLabel: 'Waarom nu al een betaalmethode?',
+    cardNote:
+      'Het opbouwen van een website kost ons rekenkracht. Een betaalmethode houdt geautomatiseerd misbruik tegen, en daarom vragen we die vóór het bouwen in plaats van erna.',
+    stripeNote:
+      'Je vult je gegevens in op de beveiligde betaalpagina van Stripe. Wij zien je kaartnummer niet en bewaren het niet.',
+    action: 'Verder naar Stripe',
+    actionBusy: 'Even geduld…',
+    close: 'Later verdergaan',
+    closeNote: 'Je antwoorden, je foto’s en je gereserveerde webadres blijven bewaard.',
+    expiresAt: 'Deze betaallink is geldig tot {time}.',
+    announce:
+      'Laatste stap: je proefperiode van {days} dagen starten bij Stripe. Vandaag betaal je {today}.',
+    cancelled: {
+      title: 'Je bent teruggekomen zonder af te ronden.',
+      body: 'Er is niets afgeschreven en er is niets kwijt. Je antwoorden, je foto’s en je webadres staan nog precies zoals je ze achterliet.',
+      action: 'Opnieuw naar Stripe',
+    },
+    expired: {
+      title: 'De betaallink is verlopen.',
+      body: 'Een betaallink blijft dertig minuten geldig. Je gegevens zijn bewaard — we maken een nieuwe voor je.',
+      action: 'Nieuwe betaallink maken',
+    },
+    unavailable: {
+      title: 'De betaalpagina is nu niet bereikbaar.',
+      body: 'Dat ligt aan ons, niet aan jou. Je antwoorden en je webadres zijn bewaard, dus we kunnen het gewoon opnieuw proberen.',
+      action: 'Opnieuw proberen',
+    },
+    /* Shown after the one retry this screen offers has failed. It gives the way back in rather than
+       a second identical button: a third attempt against a service that just refused twice is not a
+       remedy, it is a slot machine. */
+    retryFailed:
+      'Het lukt nu niet om een betaallink te maken. Je gegevens en je gereserveerde webadres blijven bewaard — kom later terug op deze pagina, dan pakken we het op waar we gebleven zijn.',
+  },
   generation: {
     title: 'We bouwen je website',
     escapeHint: 'Sluit dit venster gerust — we mailen je de link zodra hij klaar is.',
@@ -208,7 +299,29 @@ const NL = {
     releaseDone: 'Afgesproken. We mailen je de link naar {email}.',
     failed: 'Het bouwen is misgegaan. We hebben je gegevens bewaard.',
     failedAction: 'Opnieuw proberen',
+    /* Act 0. The `success_url` redirect is a browser navigation and not a payment guarantee, so the
+       user can — and regularly will — arrive here before Stripe's webhook does (PHASE2 §2.3). The
+       progress rail sits at its floor and does not move: a bar that creeps while nothing is
+       happening is the one lie this rail was built not to tell. */
+    payment: {
+      confirmingTitle: 'Je proefperiode wordt bevestigd…',
+      confirmingBody: 'Dit duurt meestal een paar seconden. Je hoeft niets te doen.',
+      confirmingSlow: 'Nog even geduld — betalingen kunnen bij drukte iets langer duren.',
+      confirmingAnnounce:
+        'Je proefperiode wordt bevestigd. Dit duurt meestal een paar seconden. Je hoeft niets te doen.',
+      pendingTitle: 'Je website wacht op je proefperiode.',
+      pendingBody:
+        'Alles staat klaar: je antwoorden, je foto’s en je webadres. Zodra je proefperiode loopt, beginnen we met bouwen.',
+      pendingAction: 'Proefperiode starten',
+      expiredTitle: 'De betaallink is verlopen.',
+      expiredBody:
+        'Een betaallink blijft dertig minuten geldig. Je gegevens en je webadres zijn bewaard — we maken een nieuwe link voor je.',
+      expiredAction: 'Nieuwe betaallink maken',
+      resumeFailed:
+        'Het lukt nu niet om een betaallink te maken. Probeer het over een paar minuten opnieuw; je gegevens blijven bewaard.',
+    },
     acts: {
+      awaitingPayment: 'We bevestigen je proefperiode',
       queued: 'We beginnen…',
       prompt: 'We lezen alles over {name}',
       design: 'We kiezen kleuren en lettertypes voor {industry}',
@@ -257,6 +370,12 @@ const EN: Copy = {
       keepGoing: 'Keep going',
       close: 'Close',
     },
+    savedCheckout: {
+      title: 'Your answers and your web address are saved.',
+      body: "Your website hasn't been built yet — that starts once your trial is running. You can pick this up later.",
+      keepGoing: 'Continue with the trial',
+      close: 'Close',
+    },
     offline: "You're offline. Your answers are saved — we'll continue as soon as you're back.",
     conflict: {
       body: 'You have a newer draft on another device.',
@@ -272,6 +391,11 @@ const EN: Copy = {
     },
     genericError: 'Something went wrong. Please try again.',
     retry: 'Try again',
+    trialUsed: {
+      title: 'A trial has already been used with this e-mail address.',
+      body: 'Each business gets one {days}-day trial. Sign in with this address to continue, or use your business e-mail address.',
+      signIn: 'Sign in',
+    },
   },
   rail: {
     label: 'Progress',
@@ -381,10 +505,13 @@ const EN: Copy = {
     mediaLabel: 'Photos of your business (optional)',
     mediaHelper: 'Drag them in or take one now. One good photo makes your site 10× more personal.',
     email: 'Where should we send the link?',
-    emailHelper: "Your site is ready in ~1 minute. We'll email the link so you never lose it.",
+    emailHelper:
+      "This is where we'll send the link once your site is ready — plus your invoice and the reminder before your trial ends.",
     consent: 'Send me tips for getting more customers (once a month at most).',
     legal: 'By continuing you agree to the Terms and the Privacy statement.',
-    trust: ['Free', 'No credit card', 'Ready in ~1 minute'],
+    trust: ['{days}-day free trial', 'You pay {today} today', 'Ready in ~1 minute'],
+    checkoutNotice:
+      'Next we reserve your web address and you start the trial at Stripe. You pay {today} today.',
   },
   media: {
     dropzone: 'Drag your photos here',
@@ -418,6 +545,54 @@ const EN: Copy = {
       undo: "I'll choose photos after all",
     },
   },
+  checkout: {
+    eyebrow: 'Last step',
+    title: 'Ready to build {name}.',
+    intro:
+      'Your answers are ready and your web address is reserved for you. We start building the moment your trial is running — it takes about a minute from there.',
+    reservedLabel: 'Your web address',
+    summaryLabel: "What we'll build",
+    photos: '{count} of your own photos',
+    photosOne: '1 of your own photos',
+    photosNone: "Imagery we'll pick for you",
+    todayLabel: 'Today',
+    todayNote: 'Nothing is charged today.',
+    afterLabel: 'After {days} days',
+    afterAmount: '{annual} per year',
+    afterNote:
+      'That works out at {monthly} per month, charged once a year. Amounts exclude VAT; Stripe calculates VAT from your country and your VAT number.',
+    cancelLabel: 'Cancelling',
+    cancelNote:
+      'Cancel within {days} days and you pay nothing — the subscription stops straight away. You cancel it yourself in your account: no phone call, no e-mail, no notice period.',
+    cardLabel: 'Why a payment method now?',
+    cardNote:
+      'Building a website costs us real compute. A payment method is what keeps automated abuse out, which is why we ask for it before the build rather than after it.',
+    stripeNote:
+      "You enter your details on Stripe's secure payment page. We never see your card number and never store it.",
+    action: 'Continue to Stripe',
+    actionBusy: 'One moment…',
+    close: 'Continue later',
+    closeNote: 'Your answers, your photos and your reserved web address stay saved.',
+    expiresAt: 'This payment link is valid until {time}.',
+    announce: 'Last step: starting your {days}-day trial at Stripe. You pay {today} today.',
+    cancelled: {
+      title: 'You came back without finishing.',
+      body: 'Nothing was charged and nothing is lost. Your answers, your photos and your web address are exactly where you left them.',
+      action: 'Back to Stripe',
+    },
+    expired: {
+      title: 'The payment link has expired.',
+      body: "A payment link stays valid for thirty minutes. Your details are saved — we'll make a new one for you.",
+      action: 'Make a new payment link',
+    },
+    unavailable: {
+      title: 'The payment page is unreachable right now.',
+      body: "That's on us, not on you. Your answers and your web address are saved, so we can simply try again.",
+      action: 'Try again',
+    },
+    retryFailed:
+      "We can't create a payment link right now. Your details and your reserved web address stay saved — come back to this page later and we'll pick up where we left off.",
+  },
   generation: {
     title: 'Building your website',
     escapeHint: "Feel free to close this window — we'll email you the link when it's ready.",
@@ -427,7 +602,25 @@ const EN: Copy = {
     releaseDone: "Done. We'll email the link to {email}.",
     failed: "The build failed. We've kept everything you filled in.",
     failedAction: 'Try again',
+    payment: {
+      confirmingTitle: 'Confirming your trial…',
+      confirmingBody: 'This usually takes a few seconds. Nothing for you to do.',
+      confirmingSlow: 'Hang on a moment — payments can take a little longer when it is busy.',
+      confirmingAnnounce:
+        'Confirming your trial. This usually takes a few seconds. Nothing for you to do.',
+      pendingTitle: 'Your website is waiting for your trial.',
+      pendingBody:
+        'Everything is ready: your answers, your photos and your web address. We start building as soon as your trial is running.',
+      pendingAction: 'Start the trial',
+      expiredTitle: 'The payment link has expired.',
+      expiredBody:
+        "A payment link stays valid for thirty minutes. Your details and your web address are saved — we'll make a new link for you.",
+      expiredAction: 'Make a new payment link',
+      resumeFailed:
+        "We can't create a payment link right now. Try again in a few minutes; your details stay saved.",
+    },
     acts: {
+      awaitingPayment: 'Confirming your trial',
       queued: 'Getting started…',
       prompt: 'Reading everything about {name}',
       design: 'Choosing colours and type for {industry}',

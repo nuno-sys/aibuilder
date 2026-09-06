@@ -1,0 +1,70 @@
+{
+  // ================================================================================================
+  // aibuilder-renderer — the tenant read path (architecture §S2, "apps/renderer/wrangler.jsonc").
+  //
+  // THE THING TO NOTICE HERE IS WHAT IS ABSENT. There is no `d1_databases` block, and there must
+  // never be one. This is the highest-exposure surface in the product: it turns
+  // attacker-influenced content into bytes on a public URL under our own brand, on a registrable
+  // domain deliberately separated from the one that holds the session cookie (§1.1). Capability
+  // separation on Workers means splitting Workers (§8), so this script holds no database, no model
+  // key, no Stripe key and no signing secret. A visitor's request is KV -> Cache -> R2, full stop
+  // (§3a step 6), which is also why adding a D1 binding would be a performance regression as well
+  // as a security one.
+  //
+  // ROUTES, NOT CUSTOM DOMAINS. Routes take precedence over Custom Domains on the same hostname;
+  // the "Custom Domains carve themselves out of `*/*`" reading is backwards and would make every
+  // request a billed invocation of the wrong Worker (§1.2). `*/*` on the tenant zone catches
+  // `<slug>.mijnsaas.com`, the apex and every Cloudflare-for-SaaS custom hostname in one entry.
+  // `cdn.mijnsaas.com/*` is carved out by `apps/media`'s MORE SPECIFIC route, which wins by
+  // specificity — that is the documented carve-out, and it is what stops this Worker fetching
+  // itself for an asset.
+  // ================================================================================================
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aibuilder-renderer",
+  "main": "src/index.ts",
+  // Pinned to 2026-08-22, not a later date: this is the newest compatibility date the workerd
+  // binary bundled with the installed wrangler/miniflare accepts, and the test pool and production
+  // must run the SAME date or the suite stops proving anything about what deploys. It is still past
+  // 2026-08-04, so `nodejs_compat` v2 is implicit. Raise both together when workerd catches up.
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "routes": [{ "pattern": "*/*", "zone_name": "mijnsaas.com" }],
+
+  // Read-only in practice: nothing on this path writes. The bucket-level grant is not expressible
+  // in wrangler, so the guarantee is the code — no `put`, no `delete`, anywhere in `src/`.
+  "r2_buckets": [
+    { "binding": "BLOBS", "bucket_name": "aibuilder-blobs", "jurisdiction": "eu" },
+    { "binding": "MEDIA", "bucket_name": "aibuilder-media", "jurisdiction": "eu" },
+  ],
+
+  // ONE READ SERVES THE WHOLE SITE (§3a step 2). Everything the renderer needs to answer a request
+  // is in the manifest: the version, the locales, the canonical host and the index state.
+  "kv_namespaces": [{ "binding": "ROUTING", "id": "REPLACE_WITH_REAL_ID" }],
+
+  // First-party, server-side, zero client bytes, zero cookies, no consent question. This is the
+  // resolution of the three-way contradiction between the design dimensions: the Cloudflare Web
+  // Analytics beacon is itself a third-party script from static.cloudflareinsights.com and is
+  // BANNED on tenant sites (§7.22).
+  "analytics_engine_datasets": [{ "binding": "AE", "dataset": "aibuilder_sites" }],
+
+  // Lead form posts only. `form-action 'self'` in the tenant CSP means a contact form must post to
+  // the tenant origin, so the renderer forwards it to the API — which is where the per-site origin
+  // allowlist, the rate limit and the spam scoring live. The site id comes from the KV manifest,
+  // never from the request body, so a visitor cannot post a lead into another tenant's inbox.
+  "services": [{ "binding": "API", "service": "aibuilder-api" }],
+
+  "vars": {
+    "ENVIRONMENT": "production",
+
+    // Generated sites live at `<slug>.${SITES_ROOT_DOMAIN}`, on a different registrable domain from
+    // APP_ORIGIN, permanently (§1.1). Read here to decide the HSTS parameters: our own zone gets
+    // `includeSubDomains`, a customer's custom domain must NEVER be preloaded (§S7).
+    "SITES_ROOT_DOMAIN": "mijnsaas.com",
+
+    // Public by definition: the file is served at `/<key>.txt` so an IndexNow endpoint can verify
+    // the ping came from someone who controls the host. A var, never a secret.
+    "INDEXNOW_KEY": "REPLACE_WITH_REAL_ID",
+  },
+}

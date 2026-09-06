@@ -28,7 +28,7 @@
 }
 
 /* The trust strip sits directly above the submit button in reading order, which is where the last
-   objection is answered: free, no card, one minute. */
+   objection is answered: seven free days, nothing charged today, ready in about a minute. */
 .trust {
   display: flex;
   flex-wrap: wrap;

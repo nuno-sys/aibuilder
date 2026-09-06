@@ -35,6 +35,10 @@ export const faq: readonly FaqItem[] = [
       'Nog niet. Het koppelen van een eigen domeinnaam staat op de planning, maar zit niet in de huidige versie. Je site is vanaf het begin bereikbaar op je eigen adres bij ons, dus je kunt meteen aan de slag.',
   },
   {
+    question: 'Waarom vragen jullie een betaalmethode voordat mijn site gebouwd wordt?',
+    answer: `Het opbouwen van een website kost ons rekenkracht, en zonder drempel wordt dat geautomatiseerd misbruikt. Je vult daarom eerst de zes vragen in, geeft dan een betaalmethode op via Stripe, en direct daarna bouwen we je site. Op dat moment wordt er ${formatEuro(0)} afgeschreven: de eerste ${plan.trialDays} dagen zijn gratis. Sluit je de betaalpagina zonder af te ronden, dan blijven je antwoorden, je foto's en je gereserveerde webadres gewoon staan.`,
+  },
+  {
     question: 'Wat gebeurt er als de proefperiode afloopt?',
     answer: `De proefperiode duurt ${plan.trialDays} dagen. Zeg je in die periode op, dan betaal je niets. Zeg je niet op, dan gaat het abonnement in en wordt ${formatEuro(plan.annualTotalEur)} exclusief btw voor twaalf maanden in één keer afgeschreven. We sturen je vóór het einde van de proefperiode een herinnering.`,
   },

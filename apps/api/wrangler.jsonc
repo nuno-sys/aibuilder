@@ -71,7 +71,12 @@
 
   // The generator holds ANTHROPIC_API_KEY and has no public route; every model call this API needs
   // (the Haiku policy screen) and every Workflow dispatch goes through this binding.
-  "services": [{ "binding": "GENERATOR", "service": "aibuilder-generator" }],
+  "services": [
+    { "binding": "GENERATOR", "service": "aibuilder-generator" },
+    // aibuilder-billing is the ONLY holder of STRIPE_SECRET_KEY. This Worker asks it to mint a
+    // Checkout session; it never talks to Stripe itself.
+    { "binding": "BILLING", "service": "aibuilder-billing" },
+  ],
 
   "queues": {
     "producers": [{ "binding": "MEDIA_Q", "queue": "aibuilder-media" }],
@@ -88,6 +93,8 @@
     { "name": "RL_SUBMIT", "namespace_id": "1002", "simple": { "limit": 1, "period": 60 } },
     { "name": "RL_UPLOAD", "namespace_id": "1003", "simple": { "limit": 20, "period": 60 } },
     { "name": "RL_LEADS", "namespace_id": "1004", "simple": { "limit": 5, "period": 60 } },
+    { "name": "RL_CHECKOUT", "namespace_id": "1005", "simple": { "limit": 3, "period": 60 } },
+    { "name": "RL_AUTH", "namespace_id": "1006", "simple": { "limit": 3, "period": 60 } },
   ],
 
   // Secrets Store rather than plain Worker secrets, so rotation is independent of a deploy. The
@@ -128,6 +135,19 @@
     // The EXACT string the Origin header is compared against. No regex, no suffix match
     // (architecture §S3, §8 layer 2).
     "APP_ORIGIN": "https://www.aibuilder.app",
+
+    // This Worker's own origin. Stripe's success_url and cancel_url point at routes on it.
+    "API_ORIGIN": "https://api.aibuilder.app",
+
+    // The dashboard. A second allowed Origin (auth and billing are called from there) and the
+    // target a 402 points a lapsed customer at.
+    "DASHBOARD_ORIGIN": "https://app.aibuilder.app",
+
+    // THE PASSKEY ONE-WAY DOOR (architecture §10 item 7). NEVER the apex: once mijnsaas.com or
+    // the control-plane domain lands on the PSL, an apex rpID is invalid and every credential
+    // ever registered is unrecoverable. This must be swapped to the real domain BEFORE the first
+    // passkey is registered — strictly earlier than the rest of the DECISIONS.md §D1 rename.
+    "WEBAUTHN_RP_ID": "app.aibuilder.app",
 
     // Generated sites live at `<slug>.${SITES_ROOT_DOMAIN}`. A different registrable domain from
     // APP_ORIGIN, permanently (architecture §1.1).

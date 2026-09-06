@@ -1,0 +1,23 @@
+{
+  "name": "@aibuilder/auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "description": "Magic-link and passkey primitives: session minting and rotation, __Host- cookies, and the WebAuthn RP-ID one-way door.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@aibuilder/core": "workspace:*",
+    "@aibuilder/db": "workspace:*",
+    "ulid": "^3.0.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260906.1",
+    "typescript": "~6.0.3"
+  }
+}

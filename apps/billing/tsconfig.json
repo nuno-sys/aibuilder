@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    // `Env` is hand-authored in `src/env.ts` for the same reasons the other Workers give: three
+    // bindings need a contract `wrangler types` cannot express, and a generated global cannot be
+    // imported by name. The only ambient types this Worker needs are the runtime ones.
+    //
+    // `@types/node` is deliberately absent even though `stripe` ships a
+    // `/// <reference types="node" />`: `skipLibCheck` absorbs it, and adding Node's globals to a
+    // Worker's type environment is how `Buffer` and `process` end up in shipped code.
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"]
+  },
+  "include": ["src/**/*.ts", "vitest.config.ts"]
+}

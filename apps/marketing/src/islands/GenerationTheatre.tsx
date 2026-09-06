@@ -2,11 +2,19 @@
  * Act 7 — the generation. Status rail on the left, live preview on the right.
  *
  * PHASE → ACT IS MANY-TO-ONE, AND ACTS ONLY EVER ADVANCE. The workflow emits twelve phases; the
- * user sees eight acts. `api_call` and `thinking` are one act, `parsing` and `pages_written` are
+ * user sees nine acts. `api_call` and `thinking` are one act, `parsing` and `pages_written` are
  * another. A phase belonging to a LOWER act than the one already reached updates the detail line and
  * nothing else — it never moves the rail backwards. This matters because a Workflow replays: a
  * retried step legitimately re-emits an earlier phase, and a progress bar that jumps back is read as
  * a failure even when the run is healthy.
+ *
+ * ACT 0 IS `awaiting_payment`, AND IT IS THE ONE ACT WHERE THE RAIL DOES NOT MOVE. Under the
+ * trial-first funnel (DECISIONS §D2) a job exists, holds a reserved slug and a promoted media set,
+ * and does not run until the `checkout.session.completed` webhook releases it. The customer can
+ * therefore be looking at this screen before a single token has been generated — and the honest
+ * rendering of "nothing is happening yet" is a stopped bar with a sentence that says so, not an
+ * asymptotic creep that implies work (PHASE2-BILLING-AUTH §2.3). The interpolation below is
+ * switched off for exactly this act; every other act keeps it.
  *
  * THE BAR NEVER LIES AND NEVER STALLS. Between events it approaches the next act's floor
  * asymptotically —
@@ -18,59 +26,30 @@
  * is switched off entirely and the bar steps on events alone: the `width` transition stays, because
  * a progress bar that does not move is a broken progress bar.
  *
- * SILENCE IS HANDLED HONESTLY. At 15 seconds without an event the rail says so in plain language. At
- * 45 seconds it offers the email-and-release path — the job runs in a Durable Object and survives
- * the tab being closed, so "close this and we will email you" is a real offer and not a dismissal.
+ * SILENCE IS HANDLED HONESTLY, AND THE TWO SILENCES ARE DIFFERENT. During the build, 15 seconds
+ * without an event says so in plain language and 45 seconds offers the email-and-release path. While
+ * waiting for a payment webhook the clocks are 20 s and 90 s (PHASE2-BILLING-AUTH §2.3) and they are
+ * measured from entering the act rather than from the last event, because in this act there are no
+ * events to measure from — and the "taking longer than usual" copy would be wrong anyway: nothing is
+ * building, we are waiting for Stripe.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Locale } from '@aibuilder/core';
 
+import type { PaymentState } from '../lib/api';
 import { SITES_ROOT_DOMAIN } from '../lib/config';
 import { copyFor } from '../lib/copy';
-import { formatPercent, interpolate, spokenHost, tenantHost } from '../lib/format';
+import { formatClockTime, formatPercent, interpolate, spokenHost, tenantHost } from '../lib/format';
 import { cssVars, useMotionTiming } from '../lib/motion';
 
-import type { GenerationEvent, GenerationPhase, SseConnection } from './hooks/useSSE';
+import type { GenerationEvent, SseConnection } from './hooks/useSSE';
+import { ACTS, ACT_DONE, ACT_FLOOR, ACT_QUEUED, PHASE_TO_ACT } from './acts';
+import type { ActIndex } from './acts';
 import SkeletonMorph from './SkeletonMorph';
 import RevealCard from './RevealCard';
 import fields from './fields.module.css';
 import styles from './Generation.module.css';
-
-/** The eight acts the user sees, in order. */
-const ACTS = [
-  'queued',
-  'prompt',
-  'design',
-  'writing',
-  'layout',
-  'media',
-  'build',
-  'deploy',
-  'done',
-] as const;
-
-/** One act index, 0–8. */
-type ActIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
-
-/** Phase → act. Many-to-one by design; `error` keeps whatever act was reached. */
-const PHASE_TO_ACT: Readonly<Record<GenerationPhase, ActIndex | null>> = {
-  queued: 0,
-  prompt_built: 1,
-  api_call: 2,
-  thinking: 2,
-  streaming: 3,
-  parsing: 4,
-  pages_written: 4,
-  media_fetch: 5,
-  build: 6,
-  deploy: 7,
-  done: 8,
-  error: null,
-};
-
-/** Progress floor of each act, and therefore the ceiling of the one before it (UX §5.5). */
-const ACT_FLOOR: readonly number[] = [0, 3, 10, 24, 58, 70, 84, 93, 100];
 
 /** Time constant of the between-events approach, in milliseconds. */
 const TAU_MS = 6000;
@@ -83,6 +62,21 @@ const SLOW_AFTER_MS = 15_000;
 
 /** Silence before the email-and-release offer appears. */
 const RELEASE_AFTER_MS = 45_000;
+
+/** Waiting on the payment webhook before the second, apologetic line appears (§2.3). */
+const PAYMENT_SLOW_AFTER_MS = 20_000;
+
+/**
+ * Waiting on the payment webhook before the email-and-release offer appears (§2.3).
+ *
+ * Ninety seconds is the point at which a webhook is genuinely late rather than merely in flight.
+ * There is nothing to retry — the job is durable, the entitlement will land, and the site will be
+ * built with the tab closed — so the offer here is the one that already exists: we mail the link.
+ */
+const PAYMENT_RELEASE_AFTER_MS = 90_000;
+
+/** How often the payment wait clock ticks. It only ever crosses two thresholds. */
+const PAYMENT_TICK_MS = 1000;
 
 export interface GenerationTheatreProps {
   readonly locale: Locale;
@@ -98,6 +92,26 @@ export interface GenerationTheatreProps {
   readonly connection: SseConnection;
   /** Milliseconds since the last event of any kind. */
   readonly silentFor: number;
+  /** Where the job stands with the trial. `not_required` renders exactly the Phase 1 theatre. */
+  readonly paymentState: PaymentState;
+  /**
+   * True when the server has told us the Checkout Session is complete — i.e. the customer arrived
+   * on `?payment=confirming`, which `GET /v1/billing/return` only issues after asking Stripe.
+   *
+   * It is the difference between "we are confirming your trial" and "your site is waiting for you to
+   * start it", and therefore between showing no action and showing a button back to Stripe. Guessing
+   * wrong in either direction is a real failure: offering to pay someone who just paid, or leaving
+   * someone who never paid staring at a confirmation that will never arrive.
+   */
+  readonly paymentConfirmed: boolean;
+  /** Epoch milliseconds at which the Checkout Session expires, or `null` when unknown. */
+  readonly checkoutDeadlineAt: number | null;
+  /** Mints a fresh Checkout Session and navigates to it. */
+  readonly onResumeCheckout: () => void;
+  /** True while that call is in flight; the button is disabled and `aria-busy`. */
+  readonly resuming: boolean;
+  /** Localised failure of the last resume attempt, or `null`. */
+  readonly resumeError: string | null;
   /** Throttled to one message per four seconds by `LiveRegions`. */
   readonly onAnnounce: (message: string) => void;
   /** Announced assertively; the build is finished and the user may be looking elsewhere. */
@@ -110,7 +124,8 @@ export interface GenerationTheatreProps {
  * Renders the status rail, the preview and — at `done` — the reveal.
  *
  * Guarantees the act index is monotonic, that the displayed percentage never exceeds the next act's
- * floor before its event has arrived, and that the completion announcement fires exactly once.
+ * floor before its event has arrived, that the rail is motionless while payment is outstanding, and
+ * that the completion announcement fires exactly once.
  */
 export default function GenerationTheatre({
   locale,
@@ -123,6 +138,12 @@ export default function GenerationTheatre({
   slots,
   connection,
   silentFor,
+  paymentState,
+  paymentConfirmed,
+  checkoutDeadlineAt,
+  onResumeCheckout,
+  resuming,
+  resumeError,
   onAnnounce,
   onAnnounceDone,
   onRelease,
@@ -135,15 +156,50 @@ export default function GenerationTheatre({
   const [displayed, setDisplayed] = useState(0);
   const [failed, setFailed] = useState(false);
   const [released, setReleased] = useState(false);
+  const [waitingFor, setWaitingFor] = useState(0);
   const lastEventAt = useRef(Date.now());
   const announcedDone = useRef(false);
+  const announcedPayment = useRef(false);
   // Mirrors of `act` and `floor` for the absorb effect, which both reads and writes them: keeping
   // them in state alone would mean either a stale read or an effect that re-runs on its own writes.
   const actRef = useRef<ActIndex>(0);
   const floorRef = useRef(0);
 
+  /**
+   * Both are gated on `act === 0`, i.e. on no build event having arrived.
+   *
+   * A `progress` frame is proof the Workflow is running, and the Workflow only runs on a released
+   * job — so the first event settles the payment question no matter what the last `payment` frame
+   * said. Without the gate a released job would render the confirmation card beside "We beginnen…"
+   * and keep the rail frozen at 0 % for the whole build.
+   */
+  const awaitingPayment = act === 0 && paymentState === 'awaiting_payment';
+  const checkoutExpired = act === 0 && paymentState === 'abandoned';
+  /**
+   * The act actually on screen.
+   *
+   * `act` is the high-water mark of the events received, which is 0 until the first one arrives —
+   * and 0 now means "waiting for a card", a claim that is only true for a job that is genuinely
+   * awaiting payment. Anything else starts at `queued`, exactly as Phase 1 did.
+   */
+  const shownAct: ActIndex = act > 0 ? act : awaitingPayment || checkoutExpired ? 0 : ACT_QUEUED;
+
+  /**
+   * Whether the checklist carries the payment row at all.
+   *
+   * Sticky once seen: a job released mid-session must keep the row (now ticked) rather than have the
+   * whole list shift up by one under the reader, which reads as a step being skipped.
+   */
+  const [showsPaymentAct, setShowsPaymentAct] = useState(false);
+  useEffect(() => {
+    if (awaitingPayment || checkoutExpired) {
+      setShowsPaymentAct(true);
+    }
+  }, [awaitingPayment, checkoutExpired]);
+
   const headlines = useMemo(
     () => ({
+      awaitingPayment: copy.generation.acts.awaitingPayment,
       queued: copy.generation.acts.queued,
       prompt: interpolate(copy.generation.acts.prompt, { name: businessName }),
       design: interpolate(copy.generation.acts.design, {
@@ -210,12 +266,12 @@ export default function GenerationTheatre({
     );
   }, [event, copy, headlines, locale, slug, onAnnounce, onAnnounceDone]);
 
-  // The asymptotic approach between events.
+  // The asymptotic approach between events. Never runs in the payment act — see the module header.
   useEffect(() => {
-    if (timing.reduced || act >= 8 || failed) {
+    if (timing.reduced || shownAct >= ACT_DONE || failed || awaitingPayment || checkoutExpired) {
       return undefined;
     }
-    const nextFloor = ACT_FLOOR[Math.min(8, act + 1)] ?? 100;
+    const nextFloor = ACT_FLOOR[Math.min(ACT_DONE, shownAct + 1)] ?? 100;
     const timer = setInterval(() => {
       const elapsed = Date.now() - lastEventAt.current;
       const target = floor + (nextFloor - floor) * (1 - Math.exp(-elapsed / TAU_MS));
@@ -224,11 +280,55 @@ export default function GenerationTheatre({
     return () => {
       clearInterval(timer);
     };
-  }, [act, floor, failed, timing.reduced]);
+  }, [shownAct, floor, failed, awaitingPayment, checkoutExpired, timing.reduced]);
 
-  const isDone = act >= 8 && !failed;
-  const showSlow = !isDone && !failed && silentFor >= SLOW_AFTER_MS;
-  const showRelease = !isDone && !failed && silentFor >= RELEASE_AFTER_MS;
+  // The payment wait clock. Measured from entering the act, not from the last event: there are no
+  // events in this act, and `silentFor` would be counting the wrong thing. It runs only for a
+  // CONFIRMED payment, because the two thresholds it feeds are both about a late webhook — a
+  // customer who has not paid is not waiting for one, and has a button instead.
+  useEffect(() => {
+    if (!awaitingPayment || !paymentConfirmed) {
+      setWaitingFor(0);
+      return undefined;
+    }
+    const enteredAt = Date.now();
+    const timer = setInterval(() => {
+      setWaitingFor(Date.now() - enteredAt);
+    }, PAYMENT_TICK_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [awaitingPayment, paymentConfirmed]);
+
+  // One announcement on entering the payment act. A screen reader user who has just been bounced
+  // through Stripe's page and back needs to be told where they landed and that they need do nothing.
+  useEffect(() => {
+    if (!awaitingPayment || announcedPayment.current) {
+      return;
+    }
+    announcedPayment.current = true;
+    onAnnounce(
+      paymentConfirmed
+        ? copy.generation.payment.confirmingAnnounce
+        : `${copy.generation.payment.pendingTitle} ${copy.generation.payment.pendingBody}`,
+    );
+  }, [awaitingPayment, paymentConfirmed, copy, onAnnounce]);
+
+  const isDone = shownAct >= ACT_DONE && !failed;
+  const paymentPending = awaitingPayment || checkoutExpired;
+  // The build's own silence copy is suppressed while payment is outstanding: "this is taking longer
+  // than usual" would be a statement about a build that has not begun.
+  const showSlow = !isDone && !failed && !paymentPending && silentFor >= SLOW_AFTER_MS;
+  const showRelease = !isDone && !failed && !paymentPending && silentFor >= RELEASE_AFTER_MS;
+  const showPaymentSlow =
+    awaitingPayment && paymentConfirmed && waitingFor >= PAYMENT_SLOW_AFTER_MS;
+  const showPaymentRelease =
+    awaitingPayment && paymentConfirmed && waitingFor >= PAYMENT_RELEASE_AFTER_MS;
+
+  /** The checklist rows, with their true act indices — the payment row is conditionally absent. */
+  const visibleActs = ACTS.slice(showsPaymentAct ? 0 : ACT_QUEUED, ACT_DONE).map(
+    (name, offset) => ({ name, index: (showsPaymentAct ? 0 : ACT_QUEUED) + offset }),
+  );
 
   return (
     // `data-generation` lets the dialog widen for this act only (see OnboardingModal.module.css).
@@ -255,8 +355,8 @@ export default function GenerationTheatre({
         <p className={styles.percent}>{formatPercent(displayed, locale)}%</p>
 
         <ol className={styles.acts}>
-          {ACTS.slice(0, 8).map((name, index) => {
-            const state = index < act ? 'done' : index === act ? 'active' : 'todo';
+          {visibleActs.map(({ name, index }) => {
+            const state = index < shownAct ? 'done' : index === shownAct ? 'active' : 'todo';
             return (
               <li
                 key={name}
@@ -283,6 +383,67 @@ export default function GenerationTheatre({
           })}
         </ol>
 
+        {/* The payment act's own card. It is neutral, not a warning: nothing has gone wrong, and
+            colouring a normal state in amber trains people to ignore amber. */}
+        {awaitingPayment ? (
+          <div className={styles.payment}>
+            <p className={styles.paymentTitle}>
+              <span className={styles.paymentPulse} aria-hidden="true" />
+              {paymentConfirmed
+                ? copy.generation.payment.confirmingTitle
+                : copy.generation.payment.pendingTitle}
+            </p>
+            <p className={styles.paymentBody}>
+              {paymentConfirmed
+                ? copy.generation.payment.confirmingBody
+                : copy.generation.payment.pendingBody}
+            </p>
+            {showPaymentSlow ? (
+              <p className={styles.paymentBody}>{copy.generation.payment.confirmingSlow}</p>
+            ) : null}
+            {!paymentConfirmed ? (
+              <>
+                <button
+                  type="button"
+                  className={`${fields.button} ${fields.buttonPrimary}`}
+                  disabled={resuming}
+                  aria-busy={resuming}
+                  onClick={onResumeCheckout}
+                >
+                  {copy.generation.payment.pendingAction}
+                </button>
+                {checkoutDeadlineAt !== null && checkoutDeadlineAt > Date.now() ? (
+                  <p className={styles.paymentNote}>
+                    {interpolate(copy.checkout.expiresAt, {
+                      time: formatClockTime(checkoutDeadlineAt, locale),
+                    })}
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+            {resumeError !== null ? <p className={styles.failed}>{resumeError}</p> : null}
+          </div>
+        ) : null}
+
+        {/* The Checkout window closed. The job is untouched — `payment_state` moved, `status` did
+            not (PHASE2-BILLING-AUTH §2.1) — so the only thing missing is a fresh session. */}
+        {checkoutExpired ? (
+          <div className={styles.payment}>
+            <p className={styles.paymentTitle}>{copy.generation.payment.expiredTitle}</p>
+            <p className={styles.paymentBody}>{copy.generation.payment.expiredBody}</p>
+            <button
+              type="button"
+              className={`${fields.button} ${fields.buttonPrimary}`}
+              disabled={resuming}
+              aria-busy={resuming}
+              onClick={onResumeCheckout}
+            >
+              {copy.generation.payment.expiredAction}
+            </button>
+            {resumeError !== null ? <p className={styles.failed}>{resumeError}</p> : null}
+          </div>
+        ) : null}
+
         {event !== null && event.message !== null && !isDone ? (
           <p className={styles.detail}>{event.message}</p>
         ) : null}
@@ -293,7 +454,7 @@ export default function GenerationTheatre({
 
         {showSlow && !showRelease ? <p className={styles.slow}>{copy.generation.slow}</p> : null}
 
-        {showRelease && !released ? (
+        {(showRelease || showPaymentRelease) && !released ? (
           <div className={styles.release}>
             <p className={styles.slow}>{copy.generation.release}</p>
             <button
@@ -322,7 +483,7 @@ export default function GenerationTheatre({
 
       <div className={styles.stage}>
         <div className={`${styles.stageInner} ${isDone ? styles.stageRevealed : ''}`}>
-          <SkeletonMorph slots={slots} act={act} businessName={businessName} />
+          <SkeletonMorph slots={slots} act={shownAct} businessName={businessName} />
         </div>
 
         {isDone ? <RevealCard locale={locale} slug={slug} siteUrl={siteUrl} email={email} /> : null}

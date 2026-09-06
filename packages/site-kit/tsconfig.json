@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "noEmit": true,
+    // hono/jsx's automatic runtime. `hono/jsx` is the only thing this package pulls from hono —
+    // there is no server, no router and no middleware here.
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    // No ambient environment at all: the two web globals this package touches (`crypto.subtle`
+    // for the render hash and `TextEncoder` for the byte budget) are declared in `src/globals.d.ts`
+    // with exactly the surface used, so nothing can reach for a DOM or Node API by accident.
+    "types": []
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"]
+}

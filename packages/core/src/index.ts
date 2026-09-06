@@ -8,12 +8,19 @@
  * the whole layer runnable in a plain vitest process.
  */
 
+export * from './budgets';
 export * from './errors';
 export * from './hours';
 export * from './ids';
 export * from './industries';
 export * from './intake';
 export * from './keys';
+export * from './lastmod';
 export * from './locales';
+export * from './publish';
+export * from './quality-gate';
 export * from './redact';
+export * from './robots';
+export * from './routing';
+export * from './sitemap';
 export * from './slug';

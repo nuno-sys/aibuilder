@@ -239,6 +239,23 @@
   color: var(--danger-700);
 }
 
+.submitLink {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* The pre-Checkout disclosure. Tertiary weight, because it is a statement of fact and not a warning
+   — but inside the sticky footer, because a disclosure the reader has scrolled past is not one. */
+.footerNotice {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--fg-tertiary);
+  text-wrap: pretty;
+}
+
 /* Turnstile's iframe. Zero height until the managed challenge decides to show itself, at which
    point it takes its natural size inside the panel the user is already looking at. */
 .turnstile {

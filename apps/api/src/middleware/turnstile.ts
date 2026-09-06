@@ -19,7 +19,8 @@ import type { Env } from '../env';
  *    another. At creation there is no draft yet to bind to, and inventing one would be theatre:
  *    the binding starts existing at the exact moment there is something to bind to.
  *  - **`hostname`** — the site the widget was solved on. Cloudflare returns it, and asserting it
- *    against `APP_ORIGIN`'s host is what stops a token farmed on an attacker's page (with a stolen
+ *    against the hosts of `APP_ORIGIN` and `DASHBOARD_ORIGIN` is what stops a token farmed on an
+ *    attacker's page (with a stolen
  *    sitekey) from being spent here.
  *
  * A token is single use. `idempotency_key` lets the SAME token be re-verified within five minutes
@@ -38,6 +39,9 @@ export const TURNSTILE_ACTION_DRAFT = 'draft-create';
 
 /** The `action` the widget sets when submitting onboarding. */
 export const TURNSTILE_ACTION_SUBMIT = 'onboarding-submit';
+
+/** The `action` the widget sets when requesting a magic link. Served from the DASHBOARD origin. */
+export const TURNSTILE_ACTION_MAGIC_LINK = 'auth-magic-link';
 
 /** Why a verification failed. `error` is what the abuse ledger records. */
 export interface TurnstileFailure {
@@ -151,12 +155,12 @@ export async function verifyTurnstile(env: Env, params: TurnstileParams): Promis
     return { ok: false, error: 'cdata-mismatch' };
   }
 
-  const expectedHostname = hostnameOf(env.APP_ORIGIN);
-  if (
-    expectedHostname !== null &&
-    parsed.hostname !== null &&
-    parsed.hostname !== expectedHostname
-  ) {
+  // Two hostnames, not one: the onboarding widget is served from the marketing site and the
+  // magic-link widget from the dashboard. Asserting a single host would fail every login.
+  const expected = [hostnameOf(env.APP_ORIGIN), hostnameOf(env.DASHBOARD_ORIGIN)].filter(
+    (host): host is string => host !== null,
+  );
+  if (expected.length > 0 && parsed.hostname !== null && !expected.includes(parsed.hostname)) {
     return { ok: false, error: 'hostname-mismatch' };
   }
 
