@@ -1,0 +1,40 @@
+name = "aibuilder"
+main = "src/worker/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# migrations_dir is relative to this file. Forward-only: never edit an applied migration.
+#   wrangler d1 migrations create  aibuilder-db  add_something
+#   wrangler d1 migrations list    aibuilder-db --local
+#   wrangler d1 migrations apply   aibuilder-db --local
+#   wrangler d1 migrations apply   aibuilder-db --remote     # gated in CI
+[[d1_databases]]
+binding = "DB"
+database_name = "aibuilder-db"
+database_id = "REPLACE_WITH_REAL_ID"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "MEDIA"                # tenant uploads: photos, hero video, logos
+bucket_name = "aibuilder-media"
+
+[[r2_buckets]]
+binding = "BLOBS"                # content-addressed page trees, manifests, AI transcripts
+bucket_name = "aibuilder-blobs"
+
+# Per-request rate limiting belongs HERE, never in D1.
+[[unsafe.bindings]]
+name = "RL_GENERATE"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+[[unsafe.bindings]]
+name = "RL_LEADS"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 5, period = 60 }
+
+[vars]
+SITES_ROOT_DOMAIN = "mijnsaas.com"
+ANTHROPIC_MODEL = "claude-opus-5"
