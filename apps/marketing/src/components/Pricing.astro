@@ -1,0 +1,195 @@
+---
+/**
+ * The price block.
+ *
+ * The annual total, the VAT basis and what happens when the trial ends are shown at the same
+ * visual weight as the headline rate, in the same block, above the fold of the section. That is a
+ * legal requirement in this market, not a design preference: the Omnibus revision of the Unfair
+ * Commercial Practices Directive (NL: Art. 6:193 BW) treats a monthly rate that is actually billed
+ * annually, disclosed only in a footnote, as a misleading omission.
+ *
+ * There are no fabricated statistics, review counts or testimonials anywhere on this page. A
+ * published marketing claim we cannot substantiate is a per-se unfair practice under UCPD Annex I,
+ * and no amount of conversion lift is worth 4% of turnover.
+ */
+import CtaButton from './CtaButton.astro';
+import { formatEuro, plan } from '../content/pricing';
+
+interface Props {
+  readonly id: string;
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly body: string;
+  /** `h2` on the home page, `h1` on `/prijzen/` where pricing is the page's subject. */
+  readonly headingLevel?: 'h1' | 'h2';
+}
+
+const { id, eyebrow, title, body, headingLevel = 'h2' } = Astro.props;
+
+const monthly = formatEuro(plan.monthlyEur);
+const annual = formatEuro(plan.annualTotalEur);
+---
+
+<section class="section section--subtle pricing" id={id}>
+  <div class="container">
+    <div class="pricing__intro">
+      <p class="eyebrow">{eyebrow}</p>
+      {headingLevel === 'h1' ? <h1>{title}</h1> : <h2>{title}</h2>}
+      <p class="lead">{body}</p>
+    </div>
+
+    <div class="pricing__card">
+      <div class="pricing__headline">
+        <p class="pricing__plan">{plan.name}</p>
+        <p class="pricing__amount">
+          <span class="pricing__figure tabular">{monthly}</span>
+          <span class="pricing__unit">per maand</span>
+        </p>
+        {/*
+          The sentence a customer can check against their bank statement. It states the number that
+          is actually charged, when it is charged, and on what VAT basis.
+        */}
+        <p class="pricing__terms">
+          Jaarlijks gefactureerd: <strong class="tabular">{annual} per jaar</strong>, exclusief
+          btw. Na {plan.trialDays} dagen gratis proberen wordt dit bedrag in één keer voor twaalf
+          maanden afgeschreven.
+        </p>
+      </div>
+
+      <ul class="pricing__list">
+        {
+          plan.includes.map((item) => (
+            <li class="pricing__item">
+              <svg
+                class="pricing__check"
+                width="20"
+                height="20"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="m4 10.5 4 4 8-9" />
+              </svg>
+              <span>{item}</span>
+            </li>
+          ))
+        }
+      </ul>
+
+      <div class="pricing__action">
+        <CtaButton size="lg" block>{plan.trialDays} dagen gratis proberen</CtaButton>
+        <p class="pricing__small">
+          Je geeft bij de start een betaalmethode op. Tijdens de proefperiode van {plan.trialDays}
+          dagen wordt er niets afgeschreven; zeg je in die periode op, dan betaal je niets. Bekijk
+          de <a href="/voorwaarden/">algemene voorwaarden</a>.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .pricing__intro {
+    max-inline-size: var(--measure);
+    margin-block-end: var(--space-12);
+  }
+
+  .pricing__intro .lead {
+    margin-block-start: var(--space-4);
+  }
+
+  .pricing__card {
+    display: grid;
+    gap: var(--space-8);
+    max-inline-size: 900px;
+    padding: var(--space-8);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    background: var(--bg-page);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .pricing__plan {
+    color: var(--fg-brand);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .pricing__amount {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin-block-start: var(--space-3);
+  }
+
+  .pricing__figure {
+    font-family: var(--font-display);
+    font-size: var(--text-5xl);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: var(--ls-5xl);
+  }
+
+  .pricing__unit {
+    color: var(--fg-secondary);
+    font-size: var(--text-lg);
+  }
+
+  .pricing__terms {
+    max-inline-size: 54ch;
+    margin-block-start: var(--space-4);
+    color: var(--fg-secondary);
+    text-wrap: pretty;
+  }
+
+  .pricing__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: var(--space-3) var(--space-6);
+    margin: 0;
+    padding: 0;
+    border-block: 1px solid var(--border-subtle);
+    padding-block: var(--space-6);
+    list-style: none;
+  }
+
+  .pricing__item {
+    display: grid;
+    grid-template-columns: 20px 1fr;
+    gap: var(--space-3);
+    align-items: start;
+    color: var(--fg-secondary);
+  }
+
+  .pricing__check {
+    margin-block-start: 3px;
+    color: var(--success-600);
+  }
+
+  .pricing__action {
+    display: grid;
+    gap: var(--space-4);
+    justify-items: start;
+    max-inline-size: 480px;
+  }
+
+  .pricing__small {
+    color: var(--fg-tertiary);
+    font-size: var(--text-sm);
+    line-height: var(--lh-sm);
+    text-wrap: pretty;
+  }
+
+  @media (min-width: 768px) {
+    .pricing__card {
+      padding: var(--space-10);
+    }
+  }
+</style>

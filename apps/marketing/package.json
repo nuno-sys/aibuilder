@@ -1,0 +1,31 @@
+{
+  "name": "@aibuilder/marketing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Astro marketing site (www). Static build served by Workers Static Assets; hosts the onboarding modal island.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "astro check"
+  },
+  "dependencies": {
+    "@aibuilder/core": "workspace:*",
+    "@astrojs/react": "^6.0.5",
+    "@astrojs/sitemap": "^3.7.4",
+    "@fontsource-variable/inter": "^5.3.0",
+    "astro": "^7.3.1",
+    "libphonenumber-js": "^1.11.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "typescript": "~6.0.3",
+    "wrangler": "^4.129.0"
+  }
+}

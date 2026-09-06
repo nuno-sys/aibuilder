@@ -1,0 +1,50 @@
+---
+/**
+ * The one call-to-action element on the marketing site.
+ *
+ * It is always an `<a>`, never a `<button>`: the target is a real, deep-linkable page
+ * (`/start/`), so the flow works with JavaScript disabled, with the middle mouse button, and with
+ * a screen reader that lists links. The onboarding island upgrades the click into an in-page modal
+ * and a `pushState` entry; it does not replace the link.
+ *
+ * Any CTA pointing at the onboarding flow is marked `data-onboarding-cta`, which is the hook the
+ * island uses to intercept the click and `components/OnboardingMount.astro` uses to warm the
+ * island's chunk on `pointerenter`/`focus`.
+ */
+import { startPath } from '../content/site';
+
+interface Props {
+  readonly href?: string;
+  readonly variant?: 'primary' | 'secondary' | 'ghost';
+  readonly size?: 'sm' | 'md' | 'lg';
+  readonly block?: boolean;
+  readonly class?: string;
+  /** Overrides the automatic detection for a CTA that points somewhere other than `/start/`. */
+  readonly onboarding?: boolean;
+}
+
+const {
+  href = startPath,
+  variant = 'primary',
+  size = 'md',
+  block = false,
+  class: extraClass,
+  onboarding,
+} = Astro.props;
+
+const isOnboardingCta = onboarding ?? href.startsWith(startPath);
+
+const classes = [
+  'btn',
+  `btn--${variant}`,
+  size === 'md' ? null : `btn--${size}`,
+  block ? 'btn--block' : null,
+  extraClass,
+]
+  .filter((value): value is string => typeof value === 'string' && value.length > 0)
+  .join(' ');
+---
+
+<a class={classes} href={href} data-onboarding-cta={isOnboardingCta ? '' : undefined}>
+  <slot />
+</a>

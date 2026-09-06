@@ -1,0 +1,134 @@
+---
+/**
+ * Home page (Dutch, the primary UI language). The only page that renders `<Hero>`, and therefore
+ * the only page that emits the hero poster preloads.
+ */
+import Faq from '../components/Faq.astro';
+import Features from '../components/Features.astro';
+import Hero from '../components/Hero.astro';
+import Pricing from '../components/Pricing.astro';
+import Base from '../layouts/Base.astro';
+import { plan } from '../content/pricing';
+
+interface Step {
+  readonly title: string;
+  readonly body: string;
+}
+
+const steps: readonly Step[] = [
+  {
+    title: 'Vertel wie je bent',
+    body: 'Zes korte vragen: je bedrijfsnaam, je branche, je adres, je openingstijden, hoe klanten je bereiken en waar je goed in bent. Foto’s mag je toevoegen, maar het hoeft niet.',
+  },
+  {
+    title: 'Wij bouwen de site',
+    body: 'De teksten worden geschreven, de vormgeving wordt op je branche afgestemd en je bedrijfsgegevens worden op elke pagina verwerkt. Je ziet stap voor stap wat er gebeurt.',
+  },
+  {
+    title: 'Meteen online',
+    body: 'Je site komt live op een eigen webadres met een beveiligd certificaat. Je kunt de link direct delen met klanten of in je Google-profiel zetten.',
+  },
+];
+---
+
+<Base
+  title="Een professionele website voor je bedrijf"
+  description="Beantwoord zes korte vragen en krijg een complete, snelle en vindbare website voor je onderneming. Zeven dagen gratis proberen, daarna € 9,99 per maand."
+  preloadHero
+>
+  <Hero
+    eyebrow="Voor kleine ondernemers in Europa"
+    headline="Jouw bedrijf, vandaag online"
+    body="Beantwoord zes korte vragen over je onderneming. Wij schrijven de teksten, stemmen de vormgeving af op je branche en zetten je website live op een eigen adres — met je openingstijden, je route en je contactgegevens erin verwerkt."
+    primaryCtaLabel="Maak mijn website"
+    secondaryCtaLabel="Bekijk wat je krijgt"
+    secondaryCtaHref="#functies"
+    reassurances={[
+      `${plan.trialDays} dagen gratis proberen`,
+      'Geen technische kennis nodig',
+      'Servers en gegevens in de EU',
+    ]}
+  />
+
+  <section
+    class="section section--deferred steps"
+    id="werkwijze"
+    style="contain-intrinsic-size: auto 620px"
+  >
+    <div class="container">
+      <p class="eyebrow">Zo werkt het</p>
+      <h2 class="steps__title">Van bedrijfsnaam naar website, zonder tussenstappen</h2>
+      <ol class="steps__list">
+        {
+          steps.map((step, index) => (
+            <li class="steps__item">
+              <span class="steps__number tabular" aria-hidden="true">
+                {index + 1}
+              </span>
+              <h3 class="steps__item-title">{step.title}</h3>
+              <p class="steps__body">{step.body}</p>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <Features
+    id="functies"
+    eyebrow="Wat je krijgt"
+    title="Alles wat een bedrijfssite nodig heeft, en niets wat hem vertraagt"
+    body="Geen bouwpakket met honderd instellingen, maar een afgewerkte site die snel laadt, klopt met je bedrijfsgegevens en klaar is om gevonden te worden."
+  />
+
+  <Pricing
+    id="prijzen"
+    eyebrow="Prijs"
+    title="Eén abonnement, één bedrag"
+    body="Geen startkosten, geen apart hostingcontract en geen meerprijs per pagina. Wat je hier ziet, is wat je betaalt."
+  />
+
+  <Faq id="vragen" eyebrow="Vragen" title="Veelgestelde vragen" />
+</Base>
+
+<style>
+  .steps__title {
+    max-inline-size: 24ch;
+    margin-block-start: var(--space-2);
+  }
+
+  .steps__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: var(--space-8);
+    margin-block-start: var(--space-12);
+    padding: 0;
+    list-style: none;
+  }
+
+  .steps__item {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    padding-block-start: var(--space-5);
+    border-block-start: 2px solid var(--brand-600);
+  }
+
+  .steps__number {
+    color: var(--fg-brand);
+    font-family: var(--font-display);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .steps__item-title {
+    font-size: var(--text-xl);
+    line-height: var(--lh-xl);
+    letter-spacing: var(--ls-xl);
+  }
+
+  .steps__body {
+    color: var(--fg-secondary);
+    text-wrap: pretty;
+  }
+</style>

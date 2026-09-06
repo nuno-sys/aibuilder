@@ -1,0 +1,116 @@
+/* The step viewport. Height is a measured custom property; the panes only fade and slide. */
+
+.viewport {
+  position: relative;
+  overflow: hidden;
+  /* `clip` rather than `hidden` would be better, but a sliding pane must be clipped on the inline
+     axis only while remaining scrollable on the block axis in the parent — `hidden` here is what
+     stops the ±24px slide from producing a horizontal scrollbar on the dialog. */
+  block-size: var(--step-height, auto);
+  transition: block-size var(--step-height-duration, 260ms) var(--ease-out-quint);
+}
+
+/* Before the first measurement there is nothing to animate from, and animating from 0 would play a
+   full-height reveal every time the modal opens. */
+.viewport[data-measured='false'] {
+  block-size: auto;
+  transition: none;
+}
+
+.pane {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.settled {
+  opacity: 1;
+  transform: none;
+}
+
+.leaving {
+  opacity: 0;
+  /* Outgoing leaves in the opposite direction to the incoming arrival. */
+  transform: translateX(calc(var(--step-offset, 24px) * -1));
+  transition:
+    opacity var(--step-out, 160ms) var(--ease-in),
+    transform var(--step-out, 160ms) var(--ease-in);
+  will-change: opacity, transform;
+  pointer-events: none;
+}
+
+.entering {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--step-in, 240ms) var(--ease-out-quint),
+    transform var(--step-in, 240ms) var(--ease-out-quint);
+  will-change: opacity, transform;
+  /* The starting position, applied for one frame by the animation below. */
+  animation: step-enter var(--step-in, 240ms) var(--ease-out-quint) both;
+}
+
+@keyframes step-enter {
+  from {
+    opacity: 0;
+    transform: translateX(var(--step-offset, 24px));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--step-question, clamp(1.25rem, 1.05rem + 0.9vw, 1.5rem));
+  font-weight: 600;
+  line-height: var(--lh-2xl);
+  letter-spacing: var(--ls-2xl);
+  color: var(--fg-primary);
+  max-inline-size: var(--measure-tight);
+}
+
+/* The heading takes focus between steps; the ring must be visible but must not look like an error. */
+.heading:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 4px;
+  border-radius: var(--radius-xs);
+}
+
+.helper {
+  margin: 0;
+  max-inline-size: var(--measure-tight);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-secondary);
+}
+
+.body {
+  margin-block-start: var(--space-4);
+}
+
+/* Reduced motion: opacity only. No slide, no height animation — the container jumps, which is the
+   correct trade when the alternative is vestibular discomfort (UX §5.6). */
+@media (prefers-reduced-motion: reduce) {
+  .viewport {
+    transition: none;
+  }
+
+  .leaving,
+  .entering {
+    transform: none;
+    animation-name: step-enter-fade;
+  }
+
+  @keyframes step-enter-fade {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+}

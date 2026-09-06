@@ -1,0 +1,187 @@
+/* Step 4 — the summary line, the disclosure and the seven-day grid. */
+
+.summary {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.toggle {
+  margin-block-start: var(--space-3);
+}
+
+.grid {
+  inline-size: 100%;
+  margin-block-start: var(--space-4);
+  border-collapse: collapse;
+}
+
+.row {
+  border-block-start: 1px solid var(--border-subtle);
+}
+
+.row > * {
+  padding-block: var(--space-2);
+  vertical-align: top;
+}
+
+.day {
+  inline-size: 4ch;
+  padding-inline-end: var(--space-3);
+  padding-block-start: var(--space-4);
+  text-align: start;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-primary);
+  white-space: nowrap;
+}
+
+.cellSwitch {
+  inline-size: 9ch;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: 44px;
+  font-size: var(--text-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.switchLabel {
+  white-space: nowrap;
+}
+
+.cellTimes {
+  inline-size: 100%;
+}
+
+.interval {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.interval + .interval {
+  margin-block-start: var(--space-2);
+}
+
+/* Narrower than a normal select: the content is five characters and a full-width control in a
+   seven-row grid is a wall. */
+.time {
+  inline-size: auto;
+  min-inline-size: 9ch;
+  min-block-size: 44px;
+  padding-block: var(--space-2);
+  padding-inline: var(--space-3) var(--space-6);
+  font-variant-numeric: tabular-nums;
+}
+
+.dash {
+  color: var(--fg-tertiary);
+}
+
+.addBreak {
+  min-block-size: 44px;
+  padding-inline: 0;
+  font-size: var(--text-sm);
+}
+
+.cellMenu {
+  position: relative;
+  inline-size: 44px;
+  padding-block-start: var(--space-2);
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.iconButton svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.iconButton:hover {
+  background: var(--bg-sunken);
+  color: var(--fg-primary);
+}
+
+.iconButton:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.menu {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-start: 44px;
+  z-index: var(--z-dropdown);
+  display: grid;
+  min-inline-size: 220px;
+  padding: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+  box-shadow: var(--shadow-lg);
+}
+
+.menuItem {
+  min-block-size: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+.menuItem:hover {
+  background: var(--bg-subtle);
+}
+
+.menuItem:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+/* Below 480 px the grid becomes stacked rows: four columns of controls do not fit a 390 px phone
+   without either horizontal scroll (SC 1.4.10) or 10 px type. */
+@media (max-width: 479px) {
+  .grid,
+  .grid tbody,
+  .row,
+  .row > * {
+    display: block;
+    inline-size: 100%;
+  }
+
+  .row {
+    padding-block: var(--space-2);
+  }
+
+  .cellMenu {
+    inline-size: 100%;
+    text-align: end;
+  }
+}

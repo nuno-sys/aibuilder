@@ -1,0 +1,42 @@
+{
+  // ================================================================================================
+  // aibuilder-marketing — the www marketing site (architecture §1.2, §S2).
+  //
+  // ASSETS-ONLY WORKER: there is deliberately no `main`. A Worker with `assets` and no entrypoint
+  // serves the static build directly from Cloudflare's asset store — zero Worker invocations, and
+  // static asset requests are not billed. Adding a `main` here to "just add one header" would put
+  // a billed invocation in front of every request on a six-page brochure; response headers belong
+  // in `public/_headers`, which this configuration already supports.
+  //
+  // `www.aibuilder.app` is the PLACEHOLDER control-plane domain from architecture §1.1. It is
+  // written in three places that must change together: `routes` below, `PUBLIC_SITE_ORIGIN`
+  // (astro.config.mjs) and the CSP in `public/_headers`.
+  //
+  // Routes, not a Custom Domain: routes take precedence over Custom Domains on the same hostname
+  // (architecture §1.2, routing correction).
+  // ================================================================================================
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aibuilder-marketing",
+  // Pinned to 2026-08-22, not a later date: this is the newest compatibility date the workerd
+  // binary bundled with the installed wrangler/miniflare accepts, and the test pool and production
+  // must run the SAME date or the suite stops proving anything about what deploys. It is still past
+  // 2026-08-04, so `nodejs_compat` v2 is implicit. Raise both together when workerd catches up.
+  "compatibility_date": "2026-08-22",
+  // No `compatibility_flags` and no `nodejs_compat`: there is no Worker code to run.
+  "observability": { "enabled": true },
+
+  "routes": [{ "pattern": "www.aibuilder.app/*", "zone_name": "aibuilder.app" }],
+
+  "assets": {
+    "directory": "./dist",
+
+    // The build emits `prijzen/index.html`, and Astro is configured with `trailingSlash: 'always'`.
+    // `auto-trailing-slash` makes `/prijzen` a redirect to `/prijzen/` instead of a 404, so an
+    // externally-typed URL without the slash still resolves to the canonical form in one hop.
+    "html_handling": "auto-trailing-slash",
+
+    // Serve the built `404.html` with a real 404 status. The default (`none`) returns a bare
+    // empty 404, which reads as a broken site and produces soft-404 noise in Search Console.
+    "not_found_handling": "404-page",
+  },
+}

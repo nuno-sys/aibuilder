@@ -1,0 +1,47 @@
+# ==================================================================================================
+# Response headers for the marketing host (architecture §S7).
+#
+# These are served by Workers Static Assets from the assets manifest, with no Worker invocation and
+# no `main` entrypoint — which is exactly why they live in a static file rather than in middleware.
+#
+# PLACEHOLDER DOMAINS. `api.aibuilder.app` below is the placeholder control-plane API host from
+# architecture §1.1. It is the same decision as `routes` in wrangler.jsonc and `PUBLIC_SITE_ORIGIN`
+# in astro.config.mjs; all three change together when the client nominates the real domain.
+#
+# Rules are matched most-specific-first, and every matching rule contributes, so `Cache-Control` is
+# set only on the asset paths and never in the catch-all — a duplicated header name across two
+# matching rules is ambiguous and not worth relying on.
+# ==================================================================================================
+
+/*
+  # Preload is safe on this apex: it is our own registrable domain and both `www` and `app` are
+  # HTTPS-only. It is NEVER set on a customer's custom domain (architecture §S7).
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  # `interest-cohort=()` is deliberately absent: FLoC was withdrawn in 2022 and was never a real
+  # Permissions-Policy feature. `browsing-topics=()` is the actual successor opt-out.
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=(), fullscreen=(self)
+  Cross-Origin-Opener-Policy: same-origin
+  # Legacy companion to `frame-ancestors`, which is the directive that actually enforces it.
+  X-Frame-Options: DENY
+  # `style-src 'unsafe-inline'` is required and is a deliberate, bounded compromise: every
+  # stylesheet on this site is INLINED into <head> (`build.inlineStylesheets: 'always'`), and a
+  # static `_headers` file cannot carry a per-build hash or a per-response nonce. Removing it means
+  # adding a `main` to this Worker and paying a billed invocation on every marketing request.
+  # `script-src` stays strict — every script here is a bundled, same-origin module, and JSON-LD is
+  # a data block that `script-src` does not apply to.
+  # `challenges.cloudflare.com` is Turnstile, which the onboarding modal loads in an iframe.
+  # `*.eu.r2.cloudflarestorage.com` is the presigned upload target for media; the `.eu.` label is
+  # mandatory for jurisdictional buckets and is covered by the request signature (architecture §1.3).
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; font-src 'self'; connect-src 'self' https://api.aibuilder.app https://*.eu.r2.cloudflarestorage.com; frame-src https://challenges.cloudflare.com; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+# Content-hashed build output: the filename changes whenever the bytes change, so this can be
+# cached forever and revalidated never.
+/_a/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Pre-encoded hero and social imagery. Not content-hashed — the media pipeline replaces files in
+# place — so a month, not a year, and revalidation on top of that.
+/media/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=604800

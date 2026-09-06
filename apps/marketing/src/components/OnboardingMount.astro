@@ -1,0 +1,72 @@
+---
+/**
+ * Mounts the onboarding modal island and warms its chunk without touching the critical path.
+ *
+ * `client:idle` is the whole hydration strategy: the island's JavaScript is fetched and hydrated
+ * during the first idle period after `load`, so it never competes with the LCP image, the font or
+ * first paint. The modal opens itself when the URL is `/start/` (architecture §3b: real `pushState`
+ * history, deep links clamped to `furthest_step + 1`), which is why this component passes no props
+ * — the island's inputs are the URL and its own `PUBLIC_*` build variables.
+ *
+ * `OnboardingModal.tsx` and everything under `src/islands/` and `src/lib/` is owned elsewhere in
+ * the app; this file only imports it.
+ *
+ * WHAT THE SCRIPT ADDS. `client:idle` already fetches the chunk at idle, so warming is a race the
+ * user can only win in one situation: they reach for the CTA in the first second, before idle
+ * fires. `modulepreload` on `pointerenter`/`focus` closes exactly that gap, and a second warm after
+ * `load` covers browsers where idle never comes because the tab is busy. Neither can delay LCP —
+ * both run after the load event or after a deliberate user gesture.
+ */
+import OnboardingModal from '../islands/OnboardingModal';
+---
+
+<OnboardingModal client:idle />
+
+<script>
+  /**
+   * Warms the island's module graph by reading the URLs Astro already serialised onto the
+   * `<astro-island>` element, so there is no build-time coupling to a chunk filename.
+   */
+  const island = document.querySelector('astro-island');
+  const ctas = document.querySelectorAll<HTMLElement>('[data-onboarding-cta]');
+
+  if (island && ctas.length > 0) {
+    let warmed = false;
+
+    const warm = (): void => {
+      if (warmed) {
+        return;
+      }
+      warmed = true;
+      for (const attribute of ['component-url', 'renderer-url']) {
+        const href = island.getAttribute(attribute);
+        if (href === null || href.length === 0) {
+          continue;
+        }
+        const link = document.createElement('link');
+        link.rel = 'modulepreload';
+        link.href = href;
+        document.head.appendChild(link);
+      }
+    };
+
+    for (const cta of ctas) {
+      // `pointerenter` rather than `mouseover`: it does not fire for every descendant, and it
+      // covers pen input. Touch never fires it, which is correct — a tap is already a commitment.
+      cta.addEventListener('pointerenter', warm, { once: true, passive: true });
+      cta.addEventListener('focus', warm, { once: true });
+    }
+
+    addEventListener(
+      'load',
+      () => {
+        if ('requestIdleCallback' in window) {
+          requestIdleCallback(warm, { timeout: 4000 });
+        } else {
+          setTimeout(warm, 1500);
+        }
+      },
+      { once: true },
+    );
+  }
+</script>

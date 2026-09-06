@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="aibuilder">
+  <!-- The four-pointed spark is the product's one accent glyph (UX §8.1, violet). A single path on
+       a transparent ground so the icon reads on both light and dark browser chrome. -->
+  <path fill="#7C5CF8" d="M16 1.5 19.5 12.5 30.5 16 19.5 19.5 16 30.5 12.5 19.5 1.5 16 12.5 12.5Z"/>
+</svg>

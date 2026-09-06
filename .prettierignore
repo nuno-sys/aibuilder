@@ -1,0 +1,13 @@
+# Build output
+dist/
+.astro/
+.wrangler/
+.turbo/
+coverage/
+
+# Generated
+pnpm-lock.yaml
+migrations/cp/0007_seed.sql
+
+# Research artefacts: verbatim agent output, kept as written so the record is the record.
+.design/

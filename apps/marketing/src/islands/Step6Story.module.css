@@ -1,0 +1,60 @@
+/* Step 6 — counter, e-mail typo suggestion, trust strip, legal line. */
+
+.counter {
+  margin: 0;
+  justify-self: end;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-tertiary);
+}
+
+.counterWarning {
+  color: var(--warning-700);
+  font-weight: 600;
+}
+
+.suggestion {
+  margin-block-start: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.suggestionText {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--fg-primary);
+}
+
+/* The trust strip sits directly above the submit button in reading order, which is where the last
+   objection is answered: free, no card, one minute. */
+.trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trustItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-sm);
+  color: var(--fg-secondary);
+}
+
+.trustItem svg {
+  inline-size: 14px;
+  block-size: 14px;
+  color: var(--success-600);
+}
+
+.legal {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--fg-tertiary);
+}

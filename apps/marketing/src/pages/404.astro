@@ -1,0 +1,77 @@
+---
+/**
+ * The 404 page. Served with a real 404 status by Workers Static Assets
+ * (`assets.not_found_handling: "404-page"` in wrangler.jsonc) — a 200 here would create soft-404
+ * noise in Search Console.
+ */
+import CtaButton from '../components/CtaButton.astro';
+import Base from '../layouts/Base.astro';
+import { footerNav } from '../content/site';
+
+const productLinks = footerNav.find((group) => group.title === 'Product')?.links ?? [];
+---
+
+<Base
+  title="Pagina niet gevonden"
+  description="Deze pagina bestaat niet of is verplaatst."
+  noindex
+  onboarding={false}
+>
+  <section class="section notfound">
+    <div class="container container--narrow">
+      <p class="eyebrow">Foutcode 404</p>
+      <h1 class="notfound__title">Deze pagina bestaat niet</h1>
+      <p class="lead">
+        De link klopt niet meer, of de pagina is verplaatst. Hieronder staan de pagina’s waar de
+        meeste bezoekers naar op zoek zijn.
+      </p>
+
+      <ul class="notfound__links">
+        {
+          productLinks.map((link) => (
+            <li>
+              <a href={link.href}>{link.label}</a>
+            </li>
+          ))
+        }
+      </ul>
+
+      <div class="notfound__action">
+        <CtaButton href="/" variant="secondary" onboarding={false}>
+          Terug naar de homepagina
+        </CtaButton>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .notfound {
+    padding-block: calc(var(--nav-h) + var(--space-16)) var(--section-y);
+  }
+
+  .notfound__title {
+    margin-block-start: var(--space-2);
+  }
+
+  .notfound .lead {
+    margin-block-start: var(--space-6);
+  }
+
+  .notfound__links {
+    margin-block-start: var(--space-6);
+    padding-inline-start: var(--space-6);
+  }
+
+  .notfound__links li + li {
+    margin-block-start: var(--space-2);
+  }
+
+  .notfound__links a {
+    color: var(--fg-brand);
+  }
+
+  .notfound__action {
+    margin-block-start: var(--space-8);
+  }
+</style>

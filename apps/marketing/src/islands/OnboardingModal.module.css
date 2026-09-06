@@ -1,0 +1,324 @@
+/* =================================================================================================
+ * The dialog itself.
+ *
+ * Full-bleed on mobile, a centred panel from 768 px up. The `<dialog>` element sits in the top
+ * layer, above every `z-index` on the page, which is why none of the elevation tokens appear here.
+ * ============================================================================================== */
+
+.dialog {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  max-inline-size: 100vw;
+  max-block-size: 100dvh;
+  inline-size: 100%;
+  block-size: 100%;
+  color: var(--fg-primary);
+  overflow: hidden;
+}
+
+.dialog::backdrop {
+  background: var(--scrim);
+  /* `backdrop-filter` on the backdrop rather than on the page: filtering the page itself would
+     create a containing block and break `position: fixed` everywhere behind the modal. */
+  backdrop-filter: blur(20px) saturate(1.1);
+  animation: backdrop-in var(--enter, 320ms) var(--ease-out-quint) both;
+}
+
+.dialog[data-closing]::backdrop {
+  animation: backdrop-out var(--exit, 180ms) var(--ease-in) both;
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes backdrop-out {
+  to {
+    opacity: 0;
+  }
+}
+
+.panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  inline-size: 100%;
+  block-size: 100%;
+  padding: var(--space-5) var(--gutter);
+  background: var(--bg-page);
+  animation: panel-in var(--enter, 320ms) var(--ease-out-quint) both;
+}
+
+.dialog[data-closing] .panel {
+  animation: panel-out var(--exit, 180ms) var(--ease-in) both;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes panel-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+}
+
+@media (min-width: 768px) {
+  .dialog {
+    inline-size: min(var(--container-narrow), calc(100vw - var(--space-10)));
+    block-size: auto;
+    max-block-size: min(88dvh, 900px);
+    margin: auto;
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-modal);
+  }
+
+  .panel {
+    border-radius: var(--radius-2xl);
+    padding: var(--space-6) var(--space-8);
+    max-block-size: min(88dvh, 900px);
+  }
+}
+
+/* The generation act needs the room; it is the only screen that goes wide. */
+@media (min-width: 1024px) {
+  .dialog:has([data-generation]) {
+    inline-size: min(var(--container), calc(100vw - var(--space-10)));
+  }
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding-block-end: var(--space-4);
+}
+
+.header > :first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.close svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+.close:hover {
+  background: var(--bg-sunken);
+  color: var(--fg-primary);
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--warning-500);
+  border-radius: var(--radius-md);
+  background: var(--warning-50);
+  color: var(--warning-700);
+  font-size: var(--text-sm);
+}
+
+/* The scroll container. `scroll-padding-bottom` keeps a focused field clear of the sticky footer,
+   which is SC 2.4.11 (Focus Not Obscured) — and `--keyboard-inset` is what keeps that true when the
+   software keyboard is open, since the layout viewport does not shrink on iOS. */
+.body {
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-block-end: var(--space-6);
+  scroll-padding-block-end: calc(96px + var(--keyboard-inset, 0px) + var(--space-4));
+}
+
+.body :where(input, select, textarea, button, a) {
+  scroll-margin-block-end: calc(96px + var(--keyboard-inset, 0px));
+}
+
+/* --- Resume card -------------------------------------------------------------------------------- */
+
+.resume {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.resumeTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: var(--ls-2xl);
+}
+
+.resumeBody {
+  margin: 0;
+  color: var(--fg-secondary);
+}
+
+.resumeSummary {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-tertiary);
+}
+
+/* --- Footer ------------------------------------------------------------------------------------- */
+
+.footer {
+  position: sticky;
+  inset-block-end: 0;
+  display: grid;
+  gap: var(--space-2);
+  padding-block: var(--space-4);
+  padding-block-end: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  border-block-start: 1px solid var(--border-subtle);
+  background: var(--bg-page);
+  /* The keyboard offset is a transform, never a layout property: a composited transform tracks the
+     keyboard animation at 60 fps, while animating `bottom` reflows the scroll container per frame.
+     `env(safe-area-inset-bottom)` above is the NOTCH and does nothing about the keyboard — the two
+     are different problems and both are handled. */
+  transform: translateY(calc(var(--keyboard-inset, 0px) * -1));
+  transition: transform var(--dur-2) var(--ease-out-quint);
+}
+
+.footerRow {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.primary {
+  flex: 1 1 auto;
+}
+
+.submitError {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--danger-700);
+}
+
+/* Turnstile's iframe. Zero height until the managed challenge decides to show itself, at which
+   point it takes its natural size inside the panel the user is already looking at. */
+.turnstile {
+  display: grid;
+  justify-items: center;
+}
+
+/* --- Nested confirmation -------------------------------------------------------------------------- */
+
+.confirm {
+  inline-size: min(420px, calc(100vw - var(--space-8)));
+  padding: var(--space-6);
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: var(--bg-page);
+  color: var(--fg-primary);
+  box-shadow: var(--shadow-2xl);
+}
+
+.confirm::backdrop {
+  background: rgb(9 12 18 / 0.35);
+}
+
+.confirmTitle {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.confirmBody {
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog::backdrop,
+  .dialog[data-closing]::backdrop {
+    backdrop-filter: none;
+    animation-duration: var(--enter, 120ms);
+  }
+
+  .panel,
+  .dialog[data-closing] .panel {
+    /* Opacity only: no translate, no scale (UX §5.6). */
+    animation-name: panel-fade;
+    animation-duration: var(--enter, 120ms);
+  }
+
+  @keyframes panel-fade {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  .footer {
+    transition: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .panel,
+  .confirm {
+    border: 1px solid var(--n-700);
+  }
+}
+
+@media (forced-colors: active) {
+  .panel,
+  .confirm {
+    border: 1px solid CanvasText;
+  }
+
+  .dialog::backdrop {
+    backdrop-filter: none;
+  }
+}

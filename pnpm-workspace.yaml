@@ -1,0 +1,23 @@
+# pnpm 10 workspace definition.
+#
+# pnpm 10 reads its own settings from THIS file, not from .npmrc — keep configuration here so
+# there is exactly one place to look.
+
+packages:
+  - apps/*
+  - packages/*
+
+# Internal packages are unbuilt (`"exports": { ".": "./src/index.ts" }`) and are bundled by each
+# app's Vite/esbuild pass. `wrangler types` runs in each app's `pretypecheck`, and pnpm 10 does not
+# run pre/post scripts unless this is switched on.
+enablePrePostScripts: true
+
+# pnpm 10 refuses to run dependency lifecycle scripts unless they are approved here. Every entry
+# below ships a native binary that is downloaded or linked by its install script; without approval
+# `wrangler dev`, `vitest` and the Astro/Tailwind builds fail at runtime with a missing-binary error
+# rather than at install time, which is a very expensive way to learn about this setting.
+onlyBuiltDependencies:
+  - "@tailwindcss/oxide"
+  - esbuild
+  - sharp
+  - workerd

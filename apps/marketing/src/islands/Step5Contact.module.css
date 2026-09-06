@@ -1,0 +1,48 @@
+/* Step 5 — the country/number pair and the WhatsApp landline warning. */
+
+.phoneRow {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.country {
+  min-inline-size: 0;
+}
+
+.number {
+  min-inline-size: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Below 480 px the pair stacks: a select showing "Nederland (+31)" and a phone field side by side
+   leaves neither enough room to read. */
+@media (max-width: 479px) {
+  .phoneRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Advisory, not blocking: the border and ground say "look at this", the two buttons say "you
+   decide". A landline that the owner insists on is still their number. */
+.warning {
+  margin-block-start: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--warning-500);
+  border-radius: var(--radius-md);
+  background: var(--warning-50);
+}
+
+.warningText {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--warning-700);
+}
+
+@media (forced-colors: active) {
+  .warning {
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+}

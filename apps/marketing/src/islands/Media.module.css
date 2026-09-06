@@ -1,0 +1,374 @@
+/* =================================================================================================
+ * The media step: dropzone, grid, tiles, reorder affordances, skip card.
+ * ============================================================================================== */
+
+.dropzone {
+  display: grid;
+  gap: var(--space-4);
+  place-items: center;
+  min-block-size: 180px;
+  padding: var(--space-6);
+  border: 2px dashed var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--n-25);
+  text-align: center;
+  transition:
+    border-color var(--dur-2) var(--ease-out-quint),
+    background-color var(--dur-2) var(--ease-out-quint),
+    transform var(--dur-2) var(--ease-out-quint);
+}
+
+.dropzoneActive {
+  border-color: var(--brand-600);
+  background: var(--brand-50);
+  transform: scale(1.01);
+}
+
+.dropzoneText {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--fg-secondary);
+}
+
+.dropzoneActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: center;
+}
+
+/* --- The grid --------------------------------------------------------------------------------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 768px) {
+  .grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.tileWrap {
+  position: relative;
+}
+
+.tile {
+  display: grid;
+  gap: var(--space-1);
+  /* `transform` is set imperatively by the FLIP pass in MediaReorder; nothing here may transition
+     it, or the invert step would animate instead of being applied instantly. */
+  will-change: transform;
+}
+
+.tilePicked {
+  outline: 2px solid var(--brand-600);
+  outline-offset: 3px;
+  border-radius: var(--radius-md);
+}
+
+.thumb {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+
+.image {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  animation: thumb-in var(--dur-4) var(--ease-out-quint) both;
+}
+
+@keyframes thumb-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.placeholder {
+  inline-size: 100%;
+  block-size: 100%;
+  background: var(--bg-sunken);
+}
+
+.heroBadge {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-start: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--brand-600);
+  color: var(--fg-on-brand);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--ls-2xs);
+}
+
+.ring {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(255 255 255 / 0.72);
+}
+
+.ring svg {
+  position: absolute;
+  inline-size: 56px;
+  block-size: 56px;
+  transform: rotate(-90deg);
+}
+
+.ringTrack {
+  fill: none;
+  stroke: var(--n-200);
+  stroke-width: 2;
+}
+
+.ringFill {
+  fill: none;
+  stroke: var(--brand-600);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--dur-3) linear;
+}
+
+.ringLabel {
+  position: relative;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--brand-700);
+}
+
+.shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgb(255 255 255 / 0.55) 50%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 150% 0;
+  }
+
+  to {
+    background-position: -50% 0;
+  }
+}
+
+.tileMeta {
+  display: grid;
+  margin: 0;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--fg-tertiary);
+}
+
+.tileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tileState {
+  color: var(--fg-tertiary);
+}
+
+.tileError .thumb {
+  background: var(--danger-50);
+}
+
+.tileErrorBody {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.tileErrorText {
+  margin: 0;
+  font-size: var(--text-2xs);
+  line-height: var(--lh-xs);
+  color: var(--danger-700);
+}
+
+.tileAction {
+  justify-self: start;
+  min-block-size: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-brand);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tileControls {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.moveButton,
+.removeButton,
+.handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.moveButton svg,
+.removeButton svg,
+.handle svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.moveButton:hover:not([disabled]),
+.removeButton:hover,
+.handle:hover {
+  background: var(--bg-sunken);
+  color: var(--fg-primary);
+}
+
+.moveButton[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.moveButton:focus-visible,
+.removeButton:focus-visible,
+.handle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.removeButton {
+  margin-inline-start: auto;
+  color: var(--fg-tertiary);
+}
+
+/* The drag handle sits over the thumbnail's top-right corner. It is a real button, so it is
+   reachable and operable without a pointer — dragging is only ever an enhancement (SC 2.5.7). */
+.handle {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  color: var(--n-0);
+  background: rgb(16 24 40 / 0.45);
+  border-radius: 0 var(--radius-md) 0 var(--radius-md);
+  touch-action: none;
+}
+
+.handle[aria-pressed='true'] {
+  background: var(--brand-600);
+}
+
+/* --- Skip card --------------------------------------------------------------------------------- */
+
+.skip {
+  display: grid;
+  gap: var(--space-4);
+  margin-block-start: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.skipChosen {
+  border-color: var(--brand-200);
+  background: var(--brand-25);
+}
+
+.skipPreviews {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skipPreview {
+  inline-size: 64px;
+  block-size: 48px;
+  border-radius: var(--radius-sm);
+}
+
+.skipBody {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.skipTitle {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.skipText {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-secondary);
+}
+
+.skipAction {
+  justify-self: start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image,
+  .shimmer {
+    animation: none;
+  }
+
+  .shimmer {
+    background: var(--n-100);
+  }
+
+  .dropzone,
+  .dropzoneActive {
+    transform: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .dropzone,
+  .skip,
+  .thumb {
+    border: 1px solid CanvasText;
+  }
+
+  .heroBadge {
+    background: Highlight;
+    color: HighlightText;
+  }
+}

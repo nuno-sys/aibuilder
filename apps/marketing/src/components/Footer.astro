@@ -1,0 +1,166 @@
+---
+/**
+ * Site footer: navigation, the operator's legal identity and the sub-processor disclosure.
+ *
+ * The legal identity is rendered only when it has actually been configured. An unconfigured build
+ * shows the bracketed placeholders from `content/site.ts` rather than inventing a company name or a
+ * KvK number — publishing either would be worse than publishing nothing.
+ */
+import {
+  brand,
+  footerNav,
+  legalEntity,
+  legalEntityIsConfigured,
+  legalRevisedOn,
+} from '../content/site';
+
+const currentYear = new Date().getUTCFullYear();
+---
+
+<footer class="footer">
+  <div class="container footer__inner">
+    <div class="footer__identity">
+      <a class="footer__brand" href="/">
+        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+          <path d="M10 0 12.2 7.8 20 10 12.2 12.2 10 20 7.8 12.2 0 10 7.8 7.8Z" fill="currentColor"
+          ></path>
+        </svg>
+        <span>{brand.name}</span>
+      </a>
+      <p class="footer__blurb">{brand.description}</p>
+      <address class="footer__address">
+        {legalEntity.legalName}<br />
+        {legalEntity.streetAddress}<br />
+        {legalEntity.postalCode} {legalEntity.city}<br />
+        KvK {legalEntity.chamberOfCommerce} · Btw-nr. {legalEntity.vatId}
+        {
+          legalEntityIsConfigured && (
+            <>
+              <br />
+              <a href={`mailto:${legalEntity.supportEmail}`}>{legalEntity.supportEmail}</a>
+            </>
+          )
+        }
+      </address>
+    </div>
+
+    <nav class="footer__nav" aria-label="Footernavigatie">
+      {
+        footerNav.map((group) => (
+          <div class="footer__group">
+            <h2 class="footer__group-title">{group.title}</h2>
+            <ul class="footer__group-list">
+              {group.links.map((link) => (
+                <li>
+                  <a class="footer__link" href={link.href}>
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </nav>
+  </div>
+
+  <div class="container footer__baseline">
+    <p>© {currentYear} {brand.name}. Alle rechten voorbehouden.</p>
+    <p>Juridische teksten laatst bijgewerkt op {legalRevisedOn}.</p>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    padding-block: var(--section-y) var(--space-10);
+    border-block-start: 1px solid var(--border-subtle);
+    background: var(--bg-subtle);
+  }
+
+  .footer__inner {
+    display: grid;
+    gap: var(--space-12);
+  }
+
+  .footer__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--fg-primary);
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .footer__brand svg {
+    color: var(--violet-500);
+  }
+
+  .footer__blurb {
+    max-inline-size: 44ch;
+    margin-block-start: var(--space-4);
+    color: var(--fg-secondary);
+  }
+
+  .footer__address {
+    margin-block-start: var(--space-6);
+    color: var(--fg-tertiary);
+    font-size: var(--text-sm);
+    line-height: var(--lh-sm);
+    font-style: normal;
+  }
+
+  .footer__nav {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    gap: var(--space-8);
+  }
+
+  .footer__group-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fg-tertiary);
+  }
+
+  .footer__group-list {
+    margin-block-start: var(--space-3);
+    padding: 0;
+    list-style: none;
+  }
+
+  .footer__link {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 44px;
+    color: var(--fg-secondary);
+    font-size: var(--text-sm);
+    text-decoration: none;
+  }
+
+  .footer__link:hover {
+    color: var(--fg-primary);
+    text-decoration: underline;
+  }
+
+  .footer__baseline {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-6);
+    margin-block-start: var(--space-12);
+    padding-block-start: var(--space-6);
+    border-block-start: 1px solid var(--border-subtle);
+    color: var(--fg-tertiary);
+    font-size: var(--text-sm);
+  }
+
+  @media (min-width: 900px) {
+    .footer__inner {
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+      gap: var(--space-16);
+    }
+  }
+</style>

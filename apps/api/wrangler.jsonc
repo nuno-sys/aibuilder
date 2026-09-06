@@ -1,0 +1,149 @@
+{
+  // ================================================================================================
+  // aibuilder-api — the public onboarding API (architecture §S2).
+  //
+  // PLACEHOLDERS. Every `REPLACE_WITH_REAL_ID` below is created by the operator, in the order the
+  // root README's "Bootstrap" section gives. Nothing here may be invented: D1 jurisdiction, R2
+  // jurisdiction and Durable Object jurisdiction are all fixed at creation and cannot be changed
+  // afterwards (architecture §9, one-way doors 1-3).
+  //
+  // `aibuilder.app` and `mijnsaas.com` are the placeholder registrable domains from architecture
+  // §1.1. The client nominates the real control-plane domain before code freeze; when it changes,
+  // the `routes` pattern, `zone_name` and `vars.APP_ORIGIN` change together — they are the same
+  // decision written three times, and a mismatch means every state-changing request is rejected by
+  // the Origin middleware.
+  // ================================================================================================
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aibuilder-api",
+  "main": "src/index.ts",
+  // >= 2026-08-04 enables nodejs_compat v2 implicitly; the explicit flag is belt and braces.
+  // Pinned to 2026-08-22, not a later date: this is the newest compatibility date the workerd
+  // binary bundled with the installed wrangler/miniflare accepts, and the test pool and production
+  // must run the SAME date or the suite stops proving anything about what deploys. It is still past
+  // 2026-08-04, so `nodejs_compat` v2 is implicit. Raise both together when workerd catches up.
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "routes": [{ "pattern": "api.aibuilder.app/*", "zone_name": "aibuilder.app" }],
+
+  "d1_databases": [
+    {
+      "binding": "CP",
+      "database_name": "aibuilder-cp",
+      "database_id": "REPLACE_WITH_REAL_ID",
+      "migrations_dir": "../../migrations/cp",
+    },
+    {
+      "binding": "SHARD_000",
+      "database_name": "aibuilder-shard-000",
+      "database_id": "REPLACE_WITH_REAL_ID",
+      "migrations_dir": "../../migrations/shard",
+    },
+  ],
+
+  // Both buckets are EU-jurisdiction and binding-only. QUARANTINE additionally carries a 24-hour
+  // object-lifecycle rule, configured in the dashboard: an abandoned draft must not accumulate
+  // storage, and an unverified object must not outlive the draft that produced it.
+  "r2_buckets": [
+    {
+      "binding": "QUARANTINE",
+      "bucket_name": "aibuilder-quarantine",
+      "jurisdiction": "eu",
+    },
+    { "binding": "MEDIA", "bucket_name": "aibuilder-media", "jurisdiction": "eu" },
+  ],
+
+  "kv_namespaces": [
+    { "binding": "ROUTING", "id": "REPLACE_WITH_REAL_ID" },
+    { "binding": "GEO", "id": "REPLACE_WITH_REAL_ID" },
+  ],
+
+  // The three Durable Objects live in aibuilder-generator: money and quotas are counted in exactly
+  // one place, and that place is not the Worker that faces the public internet.
+  "durable_objects": {
+    "bindings": [
+      { "name": "JOB_HUB", "class_name": "JobHub", "script_name": "aibuilder-generator" },
+      { "name": "QUOTA", "class_name": "QuotaDO", "script_name": "aibuilder-generator" },
+      { "name": "BUDGET", "class_name": "BudgetDO", "script_name": "aibuilder-generator" },
+    ],
+  },
+
+  // The generator holds ANTHROPIC_API_KEY and has no public route; every model call this API needs
+  // (the Haiku policy screen) and every Workflow dispatch goes through this binding.
+  "services": [{ "binding": "GENERATOR", "service": "aibuilder-generator" }],
+
+  "queues": {
+    "producers": [{ "binding": "MEDIA_Q", "queue": "aibuilder-media" }],
+  },
+
+  "images": { "binding": "IMAGES" },
+
+  // GA form of the rate-limit binding (the pre-GA `[[unsafe.bindings]]` path is migrated away from).
+  // `period` must be exactly 10 or 60. THESE LIMITS ARE PER CLOUDFLARE LOCATION AND APPROXIMATE —
+  // see the header of src/middleware/ratelimit.ts. They are layer 4 of six (architecture §8), never
+  // the only thing between an attacker and a paid generation.
+  "ratelimits": [
+    { "name": "RL_DRAFT", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
+    { "name": "RL_SUBMIT", "namespace_id": "1002", "simple": { "limit": 1, "period": 60 } },
+    { "name": "RL_UPLOAD", "namespace_id": "1003", "simple": { "limit": 20, "period": 60 } },
+    { "name": "RL_LEADS", "namespace_id": "1004", "simple": { "limit": 5, "period": 60 } },
+  ],
+
+  // Secrets Store rather than plain Worker secrets, so rotation is independent of a deploy. The
+  // code reads them through `readSecret()`, which also accepts a plain string binding so
+  // `wrangler secret put` keeps working while Secrets Store is in open beta (architecture §8).
+  "secrets_store_secrets": [
+    {
+      "binding": "TURNSTILE_SECRET",
+      "store_id": "REPLACE_WITH_REAL_ID",
+      "secret_name": "turnstile_secret",
+    },
+    {
+      "binding": "DRAFT_HMAC_KEY",
+      "store_id": "REPLACE_WITH_REAL_ID",
+      "secret_name": "draft_hmac_key",
+    },
+    { "binding": "IP_SALT", "store_id": "REPLACE_WITH_REAL_ID", "secret_name": "ip_salt" },
+    {
+      "binding": "R2_ACCESS_KEY_ID",
+      "store_id": "REPLACE_WITH_REAL_ID",
+      "secret_name": "r2_access_key_id",
+    },
+    {
+      "binding": "R2_SECRET_KEY",
+      "store_id": "REPLACE_WITH_REAL_ID",
+      "secret_name": "r2_secret_key",
+    },
+    {
+      "binding": "GEOCODER_KEY",
+      "store_id": "REPLACE_WITH_REAL_ID",
+      "secret_name": "geocoder_key",
+    },
+  ],
+
+  "vars": {
+    "ENVIRONMENT": "production",
+
+    // The EXACT string the Origin header is compared against. No regex, no suffix match
+    // (architecture §S3, §8 layer 2).
+    "APP_ORIGIN": "https://www.aibuilder.app",
+
+    // Generated sites live at `<slug>.${SITES_ROOT_DOMAIN}`. A different registrable domain from
+    // APP_ORIGIN, permanently (architecture §1.1).
+    "SITES_ROOT_DOMAIN": "mijnsaas.com",
+
+    // The `.eu.` label is MANDATORY for jurisdictional buckets and is covered by the presigned
+    // signature, so signing the wrong host produces URLs that cannot be repaired after the fact.
+    "R2_S3_ENDPOINT": "https://REPLACE_WITH_REAL_ID.eu.r2.cloudflarestorage.com",
+
+    // The S3 path of a presigned upload needs the bucket NAME, which an R2 binding does not expose,
+    // and `media_assets.r2_bucket` stores the same string. Keep equal to the QUARANTINE binding's
+    // `bucket_name` above.
+    "R2_QUARANTINE_BUCKET": "aibuilder-quarantine",
+
+    // Public by definition — it is rendered into the marketing page's Turnstile widget. Returned by
+    // GET /v1/bootstrap (architecture §S4), which is why it is a var and not a secret.
+    "TURNSTILE_SITE_KEY": "REPLACE_WITH_REAL_ID",
+  },
+}

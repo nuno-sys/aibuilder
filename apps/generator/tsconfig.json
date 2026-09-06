@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    // `Env` is hand-authored in `src/env.ts` for the reasons stated in that file's header, so the
+    // only ambient types this Worker needs are the runtime ones. `cloudflare:workers` and
+    // `cloudflare:workflows` module declarations ship inside this package.
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"]
+  },
+  "include": ["src/**/*.ts", "vitest.config.ts"]
+}

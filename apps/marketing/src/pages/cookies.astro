@@ -1,0 +1,99 @@
+---
+/**
+ * Cookieverklaring.
+ *
+ * The honest version of this document is short, because the system genuinely sets almost nothing:
+ * no analytics beacon, no third-party origins, no advertising. What it must not do is quietly skip
+ * the browser-storage entry — under ePrivacy Art. 5(3) `localStorage` is storage on the user's
+ * device exactly like a cookie, and the draft the onboarding flow keeps there is covered by the
+ * strictly-necessary exemption only if it is disclosed and only if it does what it says.
+ */
+import Legal from '../layouts/Legal.astro';
+import { brand } from '../content/site';
+---
+
+<Legal
+  title="Cookieverklaring"
+  description="Welke cookies en lokale opslag we gebruiken, waarom er geen toestemmingsbanner is en wat er op de websites van klanten gebeurt."
+  intro="Deze website gebruikt geen tracking­cookies en geen advertentienetwerken. Hieronder staat precies wat er wél op je apparaat wordt opgeslagen, en waarom."
+>
+  <h2>1. Wat we opslaan</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Naam</th>
+          <th scope="col">Soort</th>
+          <th scope="col">Waarvoor</th>
+          <th scope="col">Bewaartermijn</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>__Host-aib_draft</code></td>
+          <td>Cookie, strikt noodzakelijk</td>
+          <td>
+            Koppelt je browser aan je eigen concept, zodat je later verder kunt en niemand anders
+            bij je gegevens kan. Bevat geen inhoud, alleen een ondertekend verwijsnummer.
+          </td>
+          <td>30 dagen</td>
+        </tr>
+        <tr>
+          <td><code>cf_chl_*</code></td>
+          <td>Cookie, strikt noodzakelijk</td>
+          <td>
+            Geplaatst door de misbruikcontrole van Cloudflare om vast te stellen dat het aanmaken
+            van een website door een mens gebeurt en niet door een script.
+          </td>
+          <td>Duur van de controle, maximaal enkele minuten</td>
+        </tr>
+        <tr>
+          <td><code>aib.onboarding.v1</code></td>
+          <td>Lokale opslag, strikt noodzakelijk</td>
+          <td>
+            Bewaart je antwoorden in je eigen browser terwijl je de vragenlijst invult, zodat je
+            niets kwijtraakt als je de pagina sluit of je verbinding wegvalt. Deze gegevens
+            verlaten je apparaat pas wanneer je zelf verdergaat.
+          </td>
+          <td>Tot je de vragenlijst afrondt of je browsergegevens wist</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>2. Waarom er geen toestemmingsvenster is</h2>
+  <p>
+    Toestemming is nodig voor het opslaan of uitlezen van gegevens op je apparaat, tenzij dat
+    strikt noodzakelijk is voor een dienst die je zelf hebt gevraagd. Alles in de tabel hierboven
+    valt onder die uitzondering: zonder die gegevens kun je de vragenlijst niet invullen en kunnen
+    we misbruik niet tegenhouden. We meten geen bezoekersgedrag in je browser, we bouwen geen
+    profielen op en we delen niets met adverteerders. Daarom is een toestemmingsvenster niet
+    vereist — en krijg je er ook geen.
+  </p>
+  <p>
+    Bezoekcijfers houden we bij aan de serverkant, op basis van gegevens die de server toch al
+    verwerkt om je de pagina te kunnen sturen. Het IP-adres wordt daarbij onomkeerbaar versleuteld;
+    zie de <a href="/privacy/">privacyverklaring</a>.
+  </p>
+
+  <h2>3. De websites die met {brand.name} worden gemaakt</h2>
+  <p>
+    De websites die we voor ondernemers opbouwen, volgen dezelfde regel: geen tracking­cookies,
+    geen statistiekenscript in de browser en geen lettertypen, kaarten of video’s van andere
+    partijen. Daarom hebben die websites standaard ook geen cookiebanner nodig. Zet een ondernemer
+    later zelf iets toe dat wél gegevens van bezoekers verzamelt, dan verschijnt op die website
+    alsnog een toestemmingsvenster waarin weigeren net zo eenvoudig is als accepteren.
+  </p>
+
+  <h2>4. Zelf instellen</h2>
+  <p>
+    Je kunt cookies en lokale opslag in je browser blokkeren of verwijderen. De vragenlijst blijft
+    dan werken, maar je concept wordt niet bewaard: sluit je het venster, dan begin je opnieuw.
+  </p>
+
+  <h2>5. Wijzigingen</h2>
+  <p>
+    Verandert er iets aan wat we opslaan, dan passen we deze verklaring aan en verandert de datum
+    bovenaan de pagina.
+  </p>
+</Legal>

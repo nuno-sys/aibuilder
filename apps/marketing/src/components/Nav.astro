@@ -1,0 +1,385 @@
+---
+/**
+ * The slim top bar: three-cell grid with a CENTRED wordmark (UX §8.8).
+ *
+ * Two deviations from UX §8.8, both deliberate:
+ *
+ *  1. The glyphs are ink-coloured over the hero, not white. §8.8 asks for a bright, high-key hero
+ *     AND white nav glyphs, which cannot both be true — white on a sunlit frame is unreadable. The
+ *     bar instead sits on its own white scrim (`--hero-nav-scrim`, 0.88 alpha), which puts ink text
+ *     at ~12.5:1 against a worst-case black video frame.
+ *  2. Scroll state is driven by an IntersectionObserver on a 72px sentinel rather than a scroll
+ *     listener, so scrolling costs no main-thread work and cannot show up in INP.
+ *
+ * Every interactive target is at least 44x44 CSS px (WCAG 2.5.8), including the 36px-tall CTA,
+ * which is padded out by `.btn::after` rather than by growing the bar.
+ */
+import CtaButton from './CtaButton.astro';
+import { primaryNav, brand, signInUrl } from '../content/site';
+
+interface Props {
+  /** True on pages that render `<Hero>`: the bar starts transparent over the hero. */
+  readonly overHero?: boolean;
+}
+
+const { overHero = false } = Astro.props;
+---
+
+{/* Out of flow, zero layout impact; the observer target for the scrolled state. */}
+<div class="nav-sentinel" aria-hidden="true"></div>
+
+<header class="nav" data-over-hero={overHero ? '' : undefined}>
+  <nav class="nav__inner" aria-label="Hoofdnavigatie">
+    <div class="nav__cell nav__cell--start">
+      <button
+        class="nav__burger"
+        type="button"
+        aria-expanded="false"
+        aria-controls="nav-menu"
+      >
+        <span class="nav__burger-glyph" aria-hidden="true"></span>
+        <span class="sr-only">Menu openen</span>
+      </button>
+
+      <ul class="nav__links">
+        {
+          primaryNav.map((link) => (
+            <li>
+              <a class="nav__link" href={link.href}>
+                {link.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+
+    <div class="nav__cell nav__cell--center">
+      <a class="nav__brand" href="/">
+        <svg
+          class="nav__mark"
+          width="20"
+          height="20"
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            d="M10 0 12.2 7.8 20 10 12.2 12.2 10 20 7.8 12.2 0 10 7.8 7.8Z"
+            fill="currentColor"></path>
+        </svg>
+        <span class="nav__wordmark">{brand.name}</span>
+      </a>
+    </div>
+
+    <div class="nav__cell nav__cell--end">
+      <a class="nav__signin" href={signInUrl}>Inloggen</a>
+      <CtaButton size="sm">Start gratis</CtaButton>
+    </div>
+  </nav>
+
+  {/* Mobile panel. `hidden` is toggled on the element, never `style.display`. */}
+  <div class="nav__menu" id="nav-menu" hidden>
+    <ul class="nav__menu-list">
+      {
+        primaryNav.map((link) => (
+          <li>
+            <a class="nav__menu-link" href={link.href}>
+              {link.label}
+            </a>
+          </li>
+        ))
+      }
+      <li>
+        <a class="nav__menu-link" href={signInUrl}>Inloggen</a>
+      </li>
+    </ul>
+  </div>
+</header>
+
+<style>
+  .nav-sentinel {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    inline-size: 1px;
+    block-size: 72px;
+    pointer-events: none;
+  }
+
+  .nav {
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline: 0;
+    z-index: var(--z-nav);
+    background: var(--bg-page);
+    border-block-end: 1px solid var(--border-subtle);
+    transition:
+      background-color var(--dur-4) var(--ease-out-quint),
+      border-color var(--dur-4) var(--ease-out-quint),
+      box-shadow var(--dur-4) var(--ease-out-quint);
+  }
+
+  /* Over the hero the bar is transparent: the hero paints its own scrim behind it. */
+  .nav[data-over-hero]:not([data-stuck]) {
+    background: transparent;
+    border-block-end-color: transparent;
+  }
+
+  .nav[data-stuck] {
+    background: color-mix(in srgb, var(--bg-page) 82%, transparent);
+    box-shadow: var(--shadow-xs);
+  }
+
+  /* Progressive enhancement only: without `backdrop-filter` the bar is simply more opaque. */
+  @supports (backdrop-filter: blur(16px)) {
+    .nav[data-stuck] {
+      backdrop-filter: blur(16px) saturate(1.4);
+    }
+  }
+
+  .nav__inner {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: var(--space-2);
+    block-size: var(--nav-h);
+    max-inline-size: var(--container);
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  .nav__cell {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    min-inline-size: 0;
+  }
+
+  .nav__cell--center {
+    justify-content: center;
+  }
+
+  .nav__cell--end {
+    justify-content: flex-end;
+    gap: var(--space-4);
+  }
+
+  .nav__links {
+    display: none;
+    gap: var(--space-5);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .nav__link {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 44px;
+    color: var(--fg-secondary);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    text-decoration: none;
+    transition: color var(--dur-3) var(--ease-out-quint);
+  }
+
+  /* Underline grows from the centre — the one piece of decorative motion on the bar. */
+  .nav__link::after {
+    content: '';
+    position: absolute;
+    inset-block-end: 12px;
+    inset-inline: 0;
+    block-size: 1px;
+    background: currentColor;
+    scale: 0 1;
+    transition: scale var(--dur-3) var(--ease-out-quint);
+  }
+
+  .nav__link:hover {
+    color: var(--fg-primary);
+  }
+
+  .nav__link:hover::after {
+    scale: 1 1;
+  }
+
+  .nav__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-block-size: 44px;
+    color: var(--fg-primary);
+    text-decoration: none;
+  }
+
+  .nav__mark {
+    color: var(--violet-500);
+    flex: none;
+  }
+
+  .nav__wordmark {
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: var(--ls-lg);
+  }
+
+  .nav__signin {
+    display: none;
+    align-items: center;
+    min-block-size: 44px;
+    color: var(--fg-secondary);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .nav__signin:hover {
+    color: var(--fg-primary);
+  }
+
+  .nav__burger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 44px;
+    block-size: 44px;
+    margin-inline-start: calc(var(--space-3) * -1);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .nav__burger:hover {
+    background: var(--bg-sunken);
+  }
+
+  /* Three bars from one element: the middle is the box, the outer two are pseudo-elements. */
+  .nav__burger-glyph,
+  .nav__burger-glyph::before,
+  .nav__burger-glyph::after {
+    display: block;
+    inline-size: 18px;
+    block-size: 2px;
+    border-radius: 2px;
+    background: var(--fg-primary);
+  }
+
+  .nav__burger-glyph {
+    position: relative;
+  }
+
+  .nav__burger-glyph::before,
+  .nav__burger-glyph::after {
+    content: '';
+    position: absolute;
+    inset-inline-start: 0;
+  }
+
+  .nav__burger-glyph::before {
+    inset-block-start: -6px;
+  }
+
+  .nav__burger-glyph::after {
+    inset-block-start: 6px;
+  }
+
+  .nav__menu {
+    border-block-start: 1px solid var(--border-subtle);
+    background: var(--bg-page);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .nav__menu-list {
+    display: grid;
+    max-inline-size: var(--container);
+    margin-inline: auto;
+    padding: var(--space-2) var(--gutter) var(--space-4);
+    list-style: none;
+  }
+
+  .nav__menu-link {
+    display: flex;
+    align-items: center;
+    min-block-size: 48px;
+    color: var(--fg-primary);
+    font-size: var(--text-md);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  @media (min-width: 768px) {
+    .nav__burger,
+    .nav__menu {
+      display: none;
+    }
+
+    .nav__links,
+    .nav__signin {
+      display: flex;
+    }
+  }
+</style>
+
+<script>
+  /**
+   * Two behaviours, both scoped to the header: the scrolled state and the mobile menu.
+   * Astro bundles this into a same-origin module, which is what lets the CSP stay on
+   * `script-src 'self'` with no inline-script hash to maintain.
+   */
+  const nav = document.querySelector<HTMLElement>('.nav');
+  const sentinel = document.querySelector<HTMLElement>('.nav-sentinel');
+  const burger = document.querySelector<HTMLButtonElement>('.nav__burger');
+  const menu = document.querySelector<HTMLElement>('#nav-menu');
+
+  if (nav && sentinel) {
+    // Toggling on intersection keeps the scroll thread free; a scroll listener here would be the
+    // only main-thread work on an otherwise static page.
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry) {
+          nav.toggleAttribute('data-stuck', !entry.isIntersecting);
+        }
+      },
+      { threshold: 0 },
+    );
+    observer.observe(sentinel);
+  }
+
+  if (burger && menu) {
+    const setOpen = (open: boolean): void => {
+      menu.hidden = !open;
+      burger.setAttribute('aria-expanded', String(open));
+      const label = burger.querySelector('.sr-only');
+      if (label) {
+        label.textContent = open ? 'Menu sluiten' : 'Menu openen';
+      }
+    };
+
+    burger.addEventListener('click', () => {
+      // `hidden` is `boolean | 'until-found'`; anything other than `false` means it is hidden.
+      setOpen(menu.hidden !== false);
+    });
+
+    // Escape closes and returns focus to the control that opened it (WCAG 2.1.2).
+    document.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !menu.hidden) {
+        setOpen(false);
+        burger.focus();
+      }
+    });
+
+    // A resize past the breakpoint leaves the panel open but invisible; close it so the
+    // `aria-expanded` state never lies about what is on screen.
+    const wide = matchMedia('(min-width: 768px)');
+    wide.addEventListener('change', (event: MediaQueryListEvent) => {
+      if (event.matches) {
+        setOpen(false);
+      }
+    });
+  }
+</script>

@@ -1,0 +1,43 @@
+{
+  "name": "aibuilder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI website builder for European small businesses, running end-to-end on Cloudflare.",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=22.13.0",
+    "pnpm": ">=10.34.0"
+  },
+  "scripts": {
+    "bootstrap": "wrangler whoami && node --eval \"console.log('Account confirmed. Cloudflare resource creation stays manual on purpose: D1 jurisdiction, R2 jurisdiction and Durable Object jurisdiction are all immutable after creation. Follow README.md > Bootstrap, one command at a time.')\"",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "turbo run test",
+    "verify": "turbo run typecheck lint test",
+    "migrate:cp:local": "wrangler d1 migrations apply aibuilder-cp --local --config apps/api/wrangler.jsonc",
+    "migrate:cp:remote": "wrangler d1 migrations apply aibuilder-cp --remote --config apps/api/wrangler.jsonc",
+    "migrate:shard:local": "wrangler d1 migrations apply aibuilder-shard-000 --local --config apps/api/wrangler.jsonc",
+    "migrate:shard:remote": "wrangler d1 migrations apply aibuilder-shard-000 --remote --config apps/api/wrangler.jsonc",
+    "seed:taxonomy": "node scripts/generate-taxonomy-seed.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260906.1",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.10.0",
+    "eslint-plugin-boundaries": "^7.2.0",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.12",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.129.0"
+  }
+}

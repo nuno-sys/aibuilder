@@ -1,0 +1,27 @@
+{
+  "name": "@aibuilder/generator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The site-generation Workflow, the three Durable Objects and the media verify/re-encode queue consumer. Sole holder of ANTHROPIC_API_KEY; no public route.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aibuilder/ai": "workspace:*",
+    "@aibuilder/core": "workspace:*",
+    "@aibuilder/db": "workspace:*",
+    "@aibuilder/site-schema": "workspace:*",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260906.1",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.129.0"
+  }
+}

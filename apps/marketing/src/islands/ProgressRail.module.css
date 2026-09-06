@@ -1,0 +1,154 @@
+/* The six-segment rail. Labels on desktop, numbers plus a time estimate on mobile. */
+
+.wrap {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  min-inline-size: 0;
+}
+
+.segment {
+  display: grid;
+  gap: var(--space-1-5);
+  inline-size: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: start;
+  font: inherit;
+  color: var(--fg-tertiary);
+}
+
+/* The bar itself is 3 px; the button's hit area is padded out to 44 px with a pseudo-element so
+   SC 2.5.8 holds without the header growing (UX §6.6). */
+.segmentButton {
+  position: relative;
+  cursor: pointer;
+  color: var(--fg-secondary);
+}
+
+.segmentButton::after {
+  content: '';
+  position: absolute;
+  inset-block: -14px;
+  inset-inline: -2px;
+}
+
+.segmentButton:hover .track {
+  background: var(--n-300);
+}
+
+.segmentButton:focus-visible {
+  outline: none;
+}
+
+.segmentButton:focus-visible .track {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 3px;
+  border-radius: var(--radius-full);
+}
+
+.track {
+  block-size: 3px;
+  inline-size: 100%;
+  border-radius: var(--radius-full);
+  background: var(--n-200);
+  overflow: hidden;
+}
+
+.fill {
+  display: block;
+  block-size: 100%;
+  inline-size: var(--fill, 0%);
+  border-radius: var(--radius-full);
+  background: var(--brand-600);
+  /* The width transition survives reduced motion by design: a progress bar that does not move is a
+     broken progress bar (UX §5.6). Only the easing and the interpolation between events change. */
+  transition: inline-size var(--rail-duration, 320ms) var(--ease-out-quint);
+}
+
+.name {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  letter-spacing: var(--ls-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.segment[aria-current='step'] {
+  color: var(--fg-primary);
+}
+
+.segment[aria-current='step'] .name {
+  font-weight: 600;
+}
+
+.meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.count {
+  font-weight: 500;
+  color: var(--fg-secondary);
+}
+
+/* The decaying time estimate. Right-aligned so it reads as a footnote to the rail rather than as a
+   second, competing claim about progress. */
+.estimate {
+  color: var(--fg-tertiary);
+}
+
+/* Mobile: the rail keeps its six segments but drops the labels — six words at 12 px on a 390 px
+   screen is four characters each. The "Stap 3 van 6" line carries the same information in one. */
+@media (max-width: 767px) {
+  .name {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 768px) {
+  .count {
+    display: none;
+  }
+
+  .meta {
+    justify-content: flex-end;
+  }
+}
+
+@media (forced-colors: active) {
+  .track {
+    border: 1px solid CanvasText;
+  }
+
+  .fill {
+    background: Highlight;
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Astro's own preset is extended rather than the repo's `tsconfig.base.json`: the base pins
+  // `lib: ["ES2022"]` (a Worker has no DOM) and `noEmit`, both of which are wrong for a browser
+  // bundle. The repo's extra strictness flags are therefore restated here instead of inherited,
+  // and must be kept in step with `tsconfig.base.json` by hand.
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    // React islands live in `src/islands/**`. `@astrojs/react` compiles them with the automatic
+    // runtime, so the classic `React` import is never needed and never allowed to drift.
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+
+    // Matches tsconfig.base.json. `verbatimModuleSyntax` is what forces `import type` at every
+    // type-only boundary; `exactOptionalPropertyTypes` is what stops `{ x: undefined }` silently
+    // satisfying `x?: string` in component props.
+    "verbatimModuleSyntax": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "types": ["astro/client"]
+  },
+  // Astro's generated ambient types (`astro sync`) plus everything authored in the app.
+  "include": [".astro/types.d.ts", "src/**/*"],
+  "exclude": ["dist"]
+}

@@ -1,0 +1,105 @@
+---
+/**
+ * The feature grid. `content-visibility: auto` with a measured `contain-intrinsic-size` keeps this
+ * section out of the initial layout and paint without reintroducing CLS on scroll — the estimate
+ * has to be realistic, which is why it is set per section rather than globally (SEO §4.6).
+ */
+import { features } from '../content/features';
+
+interface Props {
+  readonly id: string;
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+const { id, eyebrow, title, body } = Astro.props;
+---
+
+<section
+  class="section section--deferred features"
+  id={id}
+  style="contain-intrinsic-size: auto 1100px"
+>
+  <div class="container">
+    <div class="features__intro">
+      <p class="eyebrow">{eyebrow}</p>
+      <h2>{title}</h2>
+      <p class="lead">{body}</p>
+    </div>
+
+    <ul class="features__grid">
+      {
+        features.map((feature) => (
+          <li class="card features__item">
+            <svg
+              class="features__icon"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d={feature.iconPath} />
+            </svg>
+            <h3 class="features__title">{feature.title}</h3>
+            <p class="features__body">{feature.body}</p>
+            {feature.note && <p class="features__note">{feature.note}</p>}
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .features__intro {
+    max-inline-size: var(--measure);
+    margin-block-end: var(--space-12);
+  }
+
+  .features__intro .lead {
+    margin-block-start: var(--space-4);
+  }
+
+  .features__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: var(--space-5);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .features__item {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+  }
+
+  .features__icon {
+    color: var(--fg-brand);
+  }
+
+  .features__title {
+    font-size: var(--text-lg);
+    line-height: var(--lh-lg);
+    letter-spacing: var(--ls-lg);
+  }
+
+  .features__body {
+    color: var(--fg-secondary);
+    text-wrap: pretty;
+  }
+
+  .features__note {
+    color: var(--fg-tertiary);
+    font-size: var(--text-sm);
+    line-height: var(--lh-sm);
+  }
+</style>

@@ -1,0 +1,18 @@
+{
+  "name": "@aibuilder/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "description": "D1 row types and every shipped prepared statement, for the control plane and the shards.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260906.1",
+    "typescript": "~6.0.3"
+  }
+}

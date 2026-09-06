@@ -1,0 +1,305 @@
+/* =================================================================================================
+ * Design tokens — the whole visual system of the marketing surface.
+ *
+ * Brief (UX §8): ultra-professional, high-end corporate, bright. Near-monochrome with one
+ * disciplined blue. Colour belongs in the customer's GENERATED site (the design-DNA palettes),
+ * never in ours: the product has to look like the neutral, expensive tool that made it.
+ *
+ * This file is inlined verbatim into `<head>` by `layouts/Base.astro` (imported with `?raw`), so
+ * it must stay small and must never reference a build-hashed URL — the two `@font-face` rules for
+ * the real Inter files are emitted by Base.astro instead, where the hashed URLs are known.
+ *
+ * Structure: raw ramps first (never used directly by components), then ROLE tokens (what
+ * components actually reference). Only the role layer is remapped for dark mode, which is what
+ * keeps the dark block six lines instead of sixty.
+ * ============================================================================================== */
+
+:root {
+  color-scheme: light dark;
+
+  /* --- Neutrals — cool-cast greys (UX §8.1) ---------------------------------------------- */
+  --n-0: #ffffff;
+  --n-25: #fcfcfd;
+  --n-50: #f7f8fa;
+  --n-100: #f0f2f5;
+  --n-200: #e4e7ec;
+  --n-300: #d0d5dd;
+  --n-400: #98a2b3;
+  --n-500: #667085;
+  --n-600: #475467;
+  --n-700: #344054;
+  --n-800: #1d2939;
+  --n-900: #101828;
+  --n-950: #0a0f1a;
+
+  /* --- Brand — "Azurite". Action and progress only; never decoration. -------------------- */
+  --brand-25: #f5f8ff;
+  --brand-50: #eef3ff;
+  --brand-100: #dce6ff;
+  --brand-200: #baccff;
+  --brand-300: #8fa9ff;
+  --brand-400: #5f80fa;
+  --brand-500: #3860ee;
+  --brand-600: #1f44db;
+  --brand-700: #1836af;
+  --brand-800: #142b85;
+  --brand-900: #101f5c;
+
+  /* --- Accent — reserved for the generation choreography and the "magic" glyph. ---------- */
+  --violet-400: #9b8afb;
+  --violet-500: #7c5cf8;
+  --violet-600: #6238e8;
+
+  /* --- Semantic ------------------------------------------------------------------------- */
+  --success-50: #ecfdf3;
+  --success-500: #12b76a;
+  --success-600: #039855;
+  --success-700: #027a48;
+  --warning-50: #fffaeb;
+  --warning-500: #f79009;
+  --warning-600: #dc6803;
+  --warning-700: #b54708;
+  --danger-50: #fef3f2;
+  --danger-500: #f04438;
+  --danger-600: #d92d20;
+  --danger-700: #b42318;
+
+  /* --- Roles — the only colour tokens a component may reference -------------------------- */
+  --bg-page: var(--n-0);
+  --bg-subtle: var(--n-50);
+  --bg-sunken: var(--n-100);
+  --bg-inverse: var(--n-950);
+  --fg-primary: var(--n-900);
+  --fg-secondary: var(--n-600);
+  --fg-tertiary: var(--n-500);
+  --fg-on-brand: var(--n-0);
+  --fg-on-inverse: var(--n-25);
+  --fg-brand: var(--brand-600);
+  --border-subtle: var(--n-200);
+  --border-default: var(--n-300);
+  --border-strong: var(--n-400);
+  --border-focus: var(--brand-600);
+  --scrim: rgb(9 12 18 / 0.55);
+
+  /* Hero wash. The hero is a BRIGHT, high-key video with ink type over it, so the wash is white
+     rather than the usual dark scrim. Tokenised because dark mode has to wash towards the dark
+     page colour instead, or the hero would end in a white band above a near-black page.
+     Contrast guarantee, computed against a worst-case pure-black video frame:
+       0.72 white over black  -> relative luminance 0.477
+       --fg-primary (#101828) -> relative luminance 0.0092
+       (0.477 + 0.05) / (0.0092 + 0.05) = 8.9:1  — WCAG AAA for large text, AA for body.
+     Raising the copy-band stop below 0.72 breaks that guarantee. */
+  --hero-wash-top: rgb(255 255 255 / 0.35);
+  --hero-wash-mid: rgb(255 255 255 / 0.72);
+  --hero-wash-bottom: var(--n-0);
+  --hero-nav-scrim: rgb(255 255 255 / 0.88);
+  /* Painted before the poster decodes, so the first paint is a warm off-white rather than a white
+     flash. A flat colour is ignored by Chrome's low-entropy heuristic, so it cannot become a fake
+     early LCP candidate (SEO §4.3). */
+  --hero-bg: #f4f2ee;
+
+  /* --- Type (UX §8.2) --------------------------------------------------------------------
+     One family in Phase 1. UX §8.2 pairs Inter with Inter Tight for display; a second family is a
+     second preloaded font file and breaks the §4.13 budget of one, so the display role is Inter at
+     weight 600 with the negative tracking below — which is where most of the "high-end" read comes
+     from anyway. "Inter Fallback" is defined below with metric overrides. */
+  --font-body:
+    'Inter Variable', 'Inter Fallback', ui-sans-serif, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 0.6875rem;
+  --lh-2xs: 1rem;
+  --ls-2xs: 0.01em;
+  --text-xs: 0.75rem;
+  --lh-xs: 1.125rem;
+  --ls-xs: 0.005em;
+  --text-sm: 0.875rem;
+  --lh-sm: 1.375rem;
+  --ls-sm: 0;
+  --text-md: 1rem;
+  --lh-md: 1.5rem;
+  --ls-md: -0.006em;
+  --text-lg: 1.125rem;
+  --lh-lg: 1.75rem;
+  --ls-lg: -0.011em;
+  --text-xl: 1.25rem;
+  --lh-xl: 1.875rem;
+  --ls-xl: -0.014em;
+  --text-2xl: 1.5rem;
+  --lh-2xl: 2rem;
+  --ls-2xl: -0.018em;
+  --text-3xl: 1.875rem;
+  --lh-3xl: 2.375rem;
+  --ls-3xl: -0.021em;
+  --text-4xl: 2.25rem;
+  --lh-4xl: 2.75rem;
+  --ls-4xl: -0.024em;
+  --text-5xl: 3rem;
+  --lh-5xl: 3.5rem;
+  --ls-5xl: -0.028em;
+  --text-6xl: 3.75rem;
+  --lh-6xl: 4.25rem;
+  --ls-6xl: -0.032em;
+  --text-7xl: 4.5rem;
+  --lh-7xl: 4.75rem;
+  --ls-7xl: -0.036em;
+
+  --display-hero: clamp(2.5rem, 1.4rem + 4.6vw, 4.5rem);
+  --display-h2: clamp(1.875rem, 1.3rem + 2.3vw, 3rem);
+
+  /* Body copy never exceeds 68ch; anything wider loses the reader on the line return. */
+  --measure: 68ch;
+  --measure-tight: 46ch;
+
+  /* --- Spacing — 4px base with a 2px half-step (UX §8.3) --------------------------------- */
+  --space-0: 0;
+  --space-px: 1px;
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+  --space-32: 128px;
+  --space-40: 160px;
+  --gutter: clamp(1.25rem, 0.9rem + 1.6vw, 2.5rem);
+  --section-y: clamp(4rem, 2.5rem + 6vw, 8.5rem);
+  --container: 1240px;
+  --container-narrow: 768px;
+  --modal-col: 640px;
+
+  /* Nav height is a token because the hero's scrim, the skip link and the scroll-margin of every
+     in-page anchor target all have to agree with it. */
+  --nav-h: 56px;
+
+  /* --- Radii (UX §8.4). Nested radius rule: inner = outer - padding, never equal. --------- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-full: 9999px;
+
+  /* --- Shadows — paper, not glow (UX §8.5) ------------------------------------------------ */
+  --shadow-xs: 0 1px 2px rgb(16 24 40 / 0.05);
+  --shadow-sm: 0 1px 3px rgb(16 24 40 / 0.1), 0 1px 2px rgb(16 24 40 / 0.06);
+  --shadow-md: 0 4px 8px -2px rgb(16 24 40 / 0.1), 0 2px 4px -2px rgb(16 24 40 / 0.06);
+  --shadow-lg: 0 12px 16px -4px rgb(16 24 40 / 0.08), 0 4px 6px -2px rgb(16 24 40 / 0.03);
+  --shadow-xl: 0 20px 24px -4px rgb(16 24 40 / 0.08), 0 8px 8px -4px rgb(16 24 40 / 0.03);
+  --shadow-2xl: 0 24px 48px -12px rgb(16 24 40 / 0.18);
+  --shadow-modal: 0 32px 64px -12px rgb(10 15 26 / 0.24), 0 0 0 1px rgb(16 24 40 / 0.05);
+  --shadow-focus: 0 0 0 4px var(--brand-100);
+  --shadow-inset: inset 0 -1px 0 rgb(16 24 40 / 0.06);
+
+  /* --- Elevation (UX §8.6). `<dialog>` sits in the top layer above all of these. ---------- */
+  --z-base: 0;
+  --z-sticky: 100;
+  --z-nav: 200;
+  --z-dropdown: 300;
+  --z-scrim: 900;
+  --z-modal: 1000;
+  --z-toast: 1100;
+  --z-tooltip: 1200;
+
+  /* --- Motion (UX §8.7) ------------------------------------------------------------------ */
+  --dur-1: 80ms;
+  --dur-2: 120ms;
+  --dur-3: 180ms;
+  --dur-4: 240ms;
+  --dur-5: 320ms;
+  --dur-6: 480ms;
+  --dur-7: 720ms;
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-in: cubic-bezier(0.32, 0, 0.67, 0);
+  /* Kept on one line: a `linear()` easing is a single indivisible value, and breaking it makes the
+     control points look like separate declarations. */
+  --ease-spring: linear(
+    0,
+    0.006,
+    0.025 2.8%,
+    0.101 6.1%,
+    0.539 18.9%,
+    0.721 25.3%,
+    0.849 31.5%,
+    0.937 38.1%,
+    0.968 41.8%,
+    0.991 45.7%,
+    1.006 50.1%,
+    1.015 55%,
+    1.017 63.9%,
+    1.001
+  );
+  --stagger: 40ms;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --nav-h: 64px;
+  }
+}
+
+/* -------------------------------------------------------------------------------------------------
+ * Metric-overridden fallback. `font-display: swap` on the real face would normally cost ~0.05 CLS;
+ * with these overrides the swap reflows almost nothing (~0.001 CLS). The numbers come from the
+ * Fontaine/capsize computation over Inter's hhea/OS-2 tables against Arial — they are measured, not
+ * guessed, and must be recomputed if the family ever changes (SEO §4.8).
+ * `local()` only: this face never causes a network request.
+ * ---------------------------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Inter Fallback';
+  src: local('Arial'), local('Helvetica Neue'), local('Liberation Sans');
+  ascent-override: 90%;
+  descent-override: 22.43%;
+  line-gap-override: 0%;
+  size-adjust: 107.12%;
+}
+
+/* -------------------------------------------------------------------------------------------------
+ * Dark mode. The UX brief is a bright, light-first product, so this is a courtesy for visitors whose
+ * OS is dark — not a second designed theme. Only ROLE tokens move; the ramps above are untouched, so
+ * every component keeps working without a single dark-mode-specific rule.
+ *
+ * There is no in-page theme toggle by design: a toggle needs storage or a cookie, and the marketing
+ * site's whole cookie story is "we set none" (architecture §7.25).
+ * ---------------------------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-page: var(--n-950);
+    --bg-subtle: #0f1621;
+    --bg-sunken: #141c29;
+    --bg-inverse: var(--n-0);
+    --fg-primary: var(--n-25);
+    --fg-secondary: var(--n-400);
+    --fg-tertiary: var(--n-500);
+    --fg-on-inverse: var(--n-900);
+    /* brand-600 on near-black is 3.4:1 — below AA for body text. brand-300 is 8.1:1. */
+    --fg-brand: var(--brand-300);
+    --border-subtle: #1e2735;
+    --border-default: #2a3547;
+    --border-strong: var(--n-600);
+    --border-focus: var(--brand-300);
+    --scrim: rgb(0 0 0 / 0.7);
+    --shadow-focus: 0 0 0 4px rgb(56 96 238 / 0.35);
+
+    /* Wash towards the dark page colour, and darken the hero ground so a bright frame does not
+       flash white behind ink-turned-paper type. The same 0.72 stop keeps the contrast guarantee,
+       now measured the other way round: #FCFCFD over a 0.72 black wash is >9:1. */
+    --hero-wash-top: rgb(10 15 26 / 0.45);
+    --hero-wash-mid: rgb(10 15 26 / 0.72);
+    --hero-wash-bottom: var(--n-950);
+    --hero-nav-scrim: rgb(10 15 26 / 0.88);
+    --hero-bg: #12161d;
+  }
+}

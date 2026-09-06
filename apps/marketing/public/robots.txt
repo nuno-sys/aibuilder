@@ -1,0 +1,19 @@
+# robots.txt for the marketing host.
+#
+# `robots.txt` is scoped to scheme + host + port, so this file governs the marketing site only.
+# Tenant sites on the generated-sites domain get their own, synthesised per Host by the renderer
+# (SEO §2.3) — nothing here applies to them.
+#
+# NOTE: the Sitemap line must be an absolute URL, so it carries the placeholder control-plane
+# domain from architecture §1.1 and changes with it, together with wrangler.jsonc and _headers.
+
+User-agent: *
+Allow: /
+
+# Campaign-tagged duplicates. The canonical link element already resolves them; blocking the crawl
+# saves the budget. Nothing that must be de-indexed is blocked here: /start/ stays crawlable so its
+# `noindex` is actually seen — a Disallow would hide the directive and leave the URL in the index.
+Disallow: /*?utm_
+Disallow: /*?fbclid
+
+Sitemap: https://www.aibuilder.app/sitemap-index.xml

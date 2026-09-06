@@ -1,0 +1,78 @@
+####################################################################################################
+# aibuilder — LOCAL DEVELOPMENT SECRETS TEMPLATE
+#
+# `wrangler dev` reads `.dev.vars` from the directory that holds the Worker's wrangler config, NOT
+# from the repo root. So this file is a master template: copy the block you need to
+#
+#     apps/api/.dev.vars
+#     apps/generator/.dev.vars
+#
+# `.dev.vars` and `.dev.vars.*` are gitignored; this example is the only version that is committed.
+#
+# NEVER put a real value in this file. Never reuse a production key locally — every secret below is
+# per-environment (architecture §S3).
+#
+# Capability separation is a design invariant, not a convention:
+#   · ANTHROPIC_API_KEY exists ONLY in apps/generator. The API Worker cannot spend money.
+#   · STRIPE_SECRET_KEY will exist ONLY in apps/billing (Phase 2). Nothing else touches it.
+# Adding a secret to a second Worker deletes the property the split was bought for.
+####################################################################################################
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# apps/api/.dev.vars    (Worker: aibuilder-api)
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# In production these six are Secrets Store bindings (`secrets_store_secrets` in
+# apps/api/wrangler.jsonc), not plain secrets. For local `wrangler dev` you can either mirror them
+# here or create them in the local secrets store — see README > Local development.
+
+# Cloudflare Turnstile server-side key. Verifies the token minted on draft creation.
+# Test keys that always pass / always fail are published by Cloudflare; use those locally.
+TURNSTILE_SECRET=
+
+# HMAC key signing the `__Host-aib_draft` cookie. 32 random bytes, base64url.
+#   openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
+# `kid`-versioned with dual-accept during rotation, so two values may be live at once.
+DRAFT_HMAC_KEY=
+
+# Salt for hashing visitor IPs before they reach D1 or a quota counter. Rotated daily by cron;
+# two generations are retained so a 24h lookback still resolves.
+IP_SALT=
+
+# R2 S3 credentials used to presign quarantine-bucket uploads. Scope this token to the
+# `aibuilder-quarantine` bucket ONLY — it is handed, indirectly, to unauthenticated browsers.
+R2_ACCESS_KEY_ID=
+R2_SECRET_KEY=
+
+# NL/BE postcode → street/city lookup used by onboarding step 3.
+GEOCODER_KEY=
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# apps/generator/.dev.vars    (Worker: aibuilder-generator — no public route)
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+
+# The only place in the system that holds an Anthropic key. Use a separate key per environment and
+# set a workspace spend limit in the Anthropic Console before the first real generation
+# (architecture §10, risk 1).
+ANTHROPIC_API_KEY=
+
+# Pexels stock search, used for the hero pool. The default tier is 200 req/hour and 20,000/month,
+# which caps signup throughput at roughly 20–30 sites/hour — apply for the upgrade before launch
+# (architecture §S3).
+PEXELS_KEY=
+
+# IndexNow submission key. Served at `/<key>.txt` on each tenant host, so it is public by design,
+# but it is minted once and must not change.
+INDEXNOW_KEY=
+
+# Same salt as the API Worker: the generator hashes IPs for the abuse ledger and the two sides must
+# agree or every cross-check silently misses.
+IP_SALT=
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# apps/billing/.dev.vars    (Worker: aibuilder-billing)   — Phase 2, not in this delivery
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# STRIPE_SECRET_KEY=
+# STRIPE_WEBHOOK_SECRET=

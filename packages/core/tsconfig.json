@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "noEmit": true,
+    "types": ["node"] /* For the seed-parity test only, which reads migrations/cp/0007_seed.sql
+                        from disk. Source files must stay runtime-agnostic: the
+                        `no-restricted-imports` rule in eslint.config.js is what enforces that,
+                        now that the compiler no longer can. */
+  },
+  "include": ["src/**/*.ts"]
+}

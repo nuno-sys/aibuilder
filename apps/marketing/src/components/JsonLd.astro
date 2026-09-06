@@ -1,0 +1,21 @@
+---
+/**
+ * Emits one JSON-LD block, escaped so no value can break out of the script element.
+ *
+ * Every `<` is rewritten to its `\u003c` JSON escape — one substitution neutralises
+ * both `</script>` and `<!--`, the only sequences an HTML parser reacts to in a script block.
+ * The payload is never string-concatenated (architecture §7.16): callers hand over an object and
+ * `JSON.stringify` does the quoting.
+ *
+ * CSP note: `application/ld+json` is a data block, not an executable script, so `script-src` does
+ * not apply to it and no hash or nonce is required.
+ */
+interface Props {
+  readonly data: Readonly<Record<string, unknown>>;
+}
+
+const { data } = Astro.props;
+const json = JSON.stringify(data).replaceAll('<', '\\u003c');
+---
+
+<script type="application/ld+json" is:inline set:html={json}></script>

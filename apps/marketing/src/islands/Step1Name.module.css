@@ -1,0 +1,62 @@
+/* Step 1 — the slug preview under the XL name field. */
+
+.slug {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-tertiary);
+}
+
+.slugLabel {
+  color: var(--fg-tertiary);
+}
+
+.slugValue {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* The part the customer chose is ink; the part we own is grey. The contrast between the two is the
+   whole message — "this is your address, and this is our roof". */
+.slugName {
+  color: var(--fg-primary);
+  font-weight: 500;
+}
+
+.slugDomain {
+  color: var(--fg-tertiary);
+}
+
+.tick {
+  inline-size: 16px;
+  block-size: 16px;
+  color: var(--success-600);
+  animation: tick-in var(--dur-4) var(--ease-spring) both;
+}
+
+@keyframes tick-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.slugChecking {
+  color: var(--fg-tertiary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick {
+    animation: none;
+  }
+}

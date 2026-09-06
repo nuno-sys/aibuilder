@@ -1,0 +1,115 @@
+---
+/**
+ * The pricing page. `Pricing` carries the H1 here because the price is the page's subject.
+ *
+ * The `Product`/`Offer` node is appended to the layout's `@graph`. It states the amount that is
+ * actually charged (the annual total) with `valueAddedTaxIncluded: false`, because publishing a
+ * monthly figure as the offer price while billing yearly is the exact misrepresentation the
+ * disclosure rules in `components/Pricing.astro` exist to prevent.
+ */
+import Faq from '../components/Faq.astro';
+import Pricing from '../components/Pricing.astro';
+import Base from '../layouts/Base.astro';
+import { brand } from '../content/site';
+import { plan } from '../content/pricing';
+
+const offerGraph = [
+  {
+    '@type': 'Product',
+    name: `${brand.name} ${plan.name}`,
+    description:
+      'Een complete, gegenereerde bedrijfswebsite met hosting, beveiligd certificaat en gestructureerde bedrijfsgegevens.',
+    brand: { '@type': 'Brand', name: brand.name },
+    offers: {
+      '@type': 'Offer',
+      priceCurrency: plan.currency,
+      price: plan.annualTotalEur.toFixed(2),
+      availability: 'https://schema.org/InStock',
+      priceSpecification: {
+        '@type': 'UnitPriceSpecification',
+        priceCurrency: plan.currency,
+        price: plan.annualTotalEur.toFixed(2),
+        valueAddedTaxIncluded: plan.vatIncluded,
+        referenceQuantity: { '@type': 'QuantitativeValue', value: 1, unitCode: 'ANN' },
+      },
+    },
+  },
+];
+---
+
+<Base
+  title="Prijzen"
+  description="Eén abonnement van € 9,99 per maand, jaarlijks gefactureerd als € 119,88 exclusief btw. Zeven dagen gratis proberen, daarna pas betalen."
+  graph={offerGraph}
+>
+  <Pricing
+    id="prijzen"
+    eyebrow="Prijzen"
+    title="Eén abonnement, één bedrag"
+    body="Geen startkosten, geen apart hostingcontract en geen meerprijs per pagina. Het bedrag dat je hier ziet, is het bedrag dat van je rekening gaat."
+    headingLevel="h1"
+  />
+
+  <section class="section section--deferred details" style="contain-intrinsic-size: auto 620px">
+    <div class="container container--narrow">
+      <h2>Wat je moet weten voordat je begint</h2>
+      <dl class="details__list">
+        <dt>Wanneer betaal je?</dt>
+        <dd>
+          De eerste {plan.trialDays} dagen zijn gratis. Daarna wordt het jaarbedrag in één keer
+          afgeschreven. We sturen je vóór het einde van de proefperiode een e-mail met de datum en
+          het bedrag.
+        </dd>
+
+        <dt>Waarom een betaalmethode bij de start?</dt>
+        <dd>
+          Om te voorkomen dat het aanmaken van websites geautomatiseerd wordt misbruikt. Tijdens de
+          proefperiode wordt er niets afgeschreven.
+        </dd>
+
+        <dt>Hoe zeg je op?</dt>
+        <dd>
+          Tijdens de proefperiode zeg je op zonder kosten. Daarna loopt het abonnement per jaar en
+          kun je vóór de verlengingsdatum opzeggen; je site blijft dan online tot het einde van de
+          betaalde periode.
+        </dd>
+
+        <dt>Btw</dt>
+        <dd>
+          Alle bedragen zijn exclusief btw. Btw wordt bij het afrekenen berekend op basis van je
+          land en, voor zakelijke klanten binnen de EU, je btw-nummer.
+        </dd>
+
+        <dt>Wat gebeurt er met je site als je stopt?</dt>
+        <dd>
+          Je site gaat offline na de laatste betaalde periode. De teksten en foto’s blijven van jou;
+          je kunt ze meenemen.
+        </dd>
+      </dl>
+    </div>
+  </section>
+
+  <Faq id="vragen" eyebrow="Vragen" title="Veelgestelde vragen" />
+</Base>
+
+<style>
+  .details__list {
+    margin-block-start: var(--space-8);
+  }
+
+  .details__list dt {
+    margin-block-start: var(--space-6);
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: var(--ls-lg);
+  }
+
+  .details__list dd {
+    max-inline-size: var(--measure);
+    margin-block-start: var(--space-2);
+    margin-inline-start: 0;
+    color: var(--fg-secondary);
+    text-wrap: pretty;
+  }
+</style>

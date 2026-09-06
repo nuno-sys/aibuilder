@@ -1,0 +1,120 @@
+---
+/**
+ * Shell for the three published legal documents (privacy, terms, cookies).
+ *
+ * They share one narrow measure, one heading rhythm and one revision line, so a reader can compare
+ * them and an auditor can see at a glance which version they are looking at. The onboarding island
+ * is deliberately not mounted here: `client:idle` would download the whole modal bundle for someone
+ * reading a privacy statement, whose only call to action is a plain link.
+ */
+import Base from './Base.astro';
+import { legalRevisedOn } from '../content/site';
+
+interface Props {
+  readonly title: string;
+  readonly description: string;
+  /** One sentence directly under the H1, saying what this document is for. */
+  readonly intro: string;
+}
+
+const { title, description, intro } = Astro.props;
+---
+
+<Base title={title} description={description} onboarding={false}>
+  <article class="legal">
+    <div class="container container--narrow">
+      <header class="legal__header">
+        <h1>{title}</h1>
+        <p class="lead">{intro}</p>
+        <p class="legal__revision">
+          Laatst bijgewerkt op <time datetime={legalRevisedOn}>{legalRevisedOn}</time>.
+        </p>
+      </header>
+      <div class="legal__body">
+        <slot />
+      </div>
+    </div>
+  </article>
+</Base>
+
+<style>
+  .legal {
+    padding-block: calc(var(--nav-h) + var(--space-16)) var(--section-y);
+  }
+
+  .legal__header {
+    padding-block-end: var(--space-8);
+    border-block-end: 1px solid var(--border-subtle);
+  }
+
+  .legal__header .lead {
+    margin-block-start: var(--space-5);
+  }
+
+  .legal__revision {
+    margin-block-start: var(--space-4);
+    color: var(--fg-tertiary);
+    font-size: var(--text-sm);
+  }
+
+  /* Descendant selectors: the document body is a `<slot>`, so its elements carry the page's scope
+     class rather than this layout's, and Astro's default scoping would not reach them. */
+  .legal__body :global(h2) {
+    margin-block-start: var(--space-12);
+    font-size: var(--text-2xl);
+    line-height: var(--lh-2xl);
+    letter-spacing: var(--ls-2xl);
+  }
+
+  .legal__body :global(h3) {
+    margin-block-start: var(--space-8);
+    font-size: var(--text-lg);
+    line-height: var(--lh-lg);
+  }
+
+  .legal__body :global(p),
+  .legal__body :global(ul),
+  .legal__body :global(ol),
+  .legal__body :global(table) {
+    margin-block-start: var(--space-4);
+    color: var(--fg-secondary);
+  }
+
+  .legal__body :global(ul),
+  .legal__body :global(ol) {
+    padding-inline-start: var(--space-6);
+  }
+
+  .legal__body :global(li + li) {
+    margin-block-start: var(--space-2);
+  }
+
+  .legal__body :global(a) {
+    color: var(--fg-brand);
+    text-underline-offset: 2px;
+  }
+
+  .legal__body :global(table) {
+    inline-size: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+  }
+
+  .legal__body :global(th),
+  .legal__body :global(td) {
+    padding: var(--space-3);
+    border-block-end: 1px solid var(--border-subtle);
+    text-align: start;
+    vertical-align: top;
+  }
+
+  .legal__body :global(th) {
+    color: var(--fg-primary);
+    font-weight: 600;
+  }
+
+  /* A wide table must scroll inside its own box; the page body never scrolls sideways. */
+  .legal__body :global(.table-scroll) {
+    overflow-x: auto;
+  }
+</style>

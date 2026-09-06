@@ -1,0 +1,184 @@
+---
+/**
+ * Privacyverklaring.
+ *
+ * Written from the architecture's actual data flows rather than from a template: the pseudonymised
+ * IP handling (§8), the 30-day draft retention (§3b), the EU residency of D1/R2/Durable Objects
+ * (§1.3) and the deliberate absence of personal data in model prompts (§8) are all disclosed,
+ * because each of them is a decision a data subject would want to know about — and because a
+ * privacy statement that does not match the system is worse than none.
+ */
+import Legal from '../layouts/Legal.astro';
+import { brand, legalEntity, legalEntityIsConfigured } from '../content/site';
+---
+
+<Legal
+  title="Privacyverklaring"
+  description="Welke persoonsgegevens we verwerken, waarom, hoe lang we ze bewaren en welke rechten je hebt."
+  intro="Deze verklaring beschrijft welke persoonsgegevens we verwerken wanneer je onze website bezoekt of een website laat maken, waarom we dat doen en welke rechten je daarbij hebt."
+>
+  <h2>1. Wie is verantwoordelijk</h2>
+  <p>
+    Verwerkingsverantwoordelijke is {legalEntity.legalName}, {legalEntity.streetAddress},
+    {legalEntity.postalCode} {legalEntity.city}, ingeschreven bij de Kamer van Koophandel onder
+    nummer {legalEntity.chamberOfCommerce}. Voor vragen over deze verklaring kun je terecht bij
+    {
+      legalEntityIsConfigured ? (
+        <a href={`mailto:${legalEntity.privacyEmail}`}>{legalEntity.privacyEmail}</a>
+      ) : (
+        legalEntity.privacyEmail
+      )
+    }.
+  </p>
+
+  <h2>2. Welke gegevens we verwerken</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Gegevens</th>
+          <th scope="col">Waarvoor</th>
+          <th scope="col">Grondslag</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            Bedrijfsnaam, branche, vestigingsadres, openingstijden, telefoonnummer, eventueel
+            WhatsApp-nummer, e-mailadres, een korte omschrijving van je onderneming en de foto’s die
+            je uploadt
+          </td>
+          <td>Het opbouwen en publiceren van je website</td>
+          <td>Uitvoering van de overeenkomst</td>
+        </tr>
+        <tr>
+          <td>E-mailadres en organisatienaam</td>
+          <td>Je account, de link om je website op te eisen, en berichten over je abonnement</td>
+          <td>Uitvoering van de overeenkomst</td>
+        </tr>
+        <tr>
+          <td>Betaalgegevens</td>
+          <td>
+            Het afhandelen van je abonnement. Kaartgegevens worden rechtstreeks door onze
+            betaaldienstverlener verwerkt; wij slaan ze niet op
+          </td>
+          <td>Uitvoering van de overeenkomst</td>
+        </tr>
+        <tr>
+          <td>
+            Technische gegevens: het tijdstip van een verzoek, de opgevraagde pagina en een
+            onomkeerbaar versleuteld IP-adres
+          </td>
+          <td>
+            Beveiliging, misbruikbestrijding en het eerlijk verdelen van capaciteit over gebruikers
+          </td>
+          <td>Gerechtvaardigd belang</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    We vragen nooit om bijzondere categorieën van persoonsgegevens en we hebben ze niet nodig. Vul
+    ze ook niet in bij de omschrijving van je onderneming.
+  </p>
+
+  <h2>3. IP-adressen</h2>
+  <p>
+    We slaan IP-adressen nooit onversleuteld op. Een IP-adres wordt omgezet in een onomkeerbare
+    hash met een zout dat dagelijks wisselt. Dat maakt het gegeven pseudoniem, niet anoniem: het
+    blijft een persoonsgegeven en het valt dus onder deze verklaring en onder je rechten. We
+    gebruiken het uitsluitend om misbruik te herkennen, nooit om je te volgen of te profileren.
+  </p>
+
+  <h2>4. Hoe lang we gegevens bewaren</h2>
+  <ul>
+    <li>
+      Een niet-afgerond concept van de vragenlijst: 30 dagen na de laatste wijziging, daarna wordt
+      het definitief verwijderd, inclusief de geüploade bestanden.
+    </li>
+    <li>
+      Een website die na 30 dagen niet is opgeëist: de bijbehorende gegevens en bestanden worden
+      definitief verwijderd.
+    </li>
+    <li>Accountgegevens: zolang je een account hebt, en daarna nog 90 dagen.</li>
+    <li>
+      Facturen en betaalgegevens: zeven jaar, omdat de fiscale bewaarplicht dat voorschrijft.
+    </li>
+    <li>Versleutelde IP-hashes en beveiligingslogboeken: maximaal 30 dagen.</li>
+  </ul>
+
+  <h2>5. Wie de gegevens verder verwerkt</h2>
+  <p>
+    We schakelen andere partijen in om de dienst te kunnen leveren. Met elk van hen is een
+    verwerkersovereenkomst gesloten.
+  </p>
+  <ul>
+    <li>
+      <strong>Cloudflare</strong> — hosting, opslag en netwerk. Je website, je bestanden en de
+      database staan in de Europese Unie.
+    </li>
+    <li>
+      <strong>Anthropic</strong> (Verenigde Staten) — het taalmodel dat de teksten voor je website
+      schrijft. Zie hieronder.
+    </li>
+    <li>
+      <strong>Stripe</strong> — het afhandelen van betalingen en abonnementen.
+    </li>
+  </ul>
+  <p>
+    Een actuele lijst van sub-verwerkers kun je opvragen via het e-mailadres in artikel 1. We
+    verkopen geen gegevens en we gebruiken je gegevens niet voor advertenties.
+  </p>
+
+  <h2>6. Doorgifte naar de Verenigde Staten</h2>
+  <p>
+    Het taalmodel dat je teksten schrijft, draait in de Verenigde Staten. Er is geen Europese
+    variant beschikbaar. We hebben dat op twee manieren afgedekt. Ten eerste sturen we bewust geen
+    persoonsgegevens mee in de opdracht aan het model: je e-mailadres, telefoonnummer, straatadres
+    en de link naar je Google-bedrijfsprofiel blijven hier en worden pas toegevoegd wanneer de
+    pagina’s worden opgebouwd. Wat wél meegaat, is je branche, je plaats en de omschrijving die je
+    zelf hebt geschreven. Ten tweede is de doorgifte contractueel geregeld met de
+    modelcontractbepalingen van de Europese Commissie, aangevuld met een beoordeling van de
+    gevolgen daarvan.
+  </p>
+
+  <h2>7. Cookies en lokale opslag</h2>
+  <p>
+    Deze website plaatst geen tracking­cookies, gebruikt geen advertentienetwerken en laadt geen
+    lettertypen of scripts van andere partijen. Wat we wél opslaan staat, met bewaartermijn en
+    reden, in de <a href="/cookies/">cookieverklaring</a>.
+  </p>
+
+  <h2>8. Beveiliging</h2>
+  <p>
+    Verkeer verloopt uitsluitend over een versleutelde verbinding. Toegang tot productiegegevens is
+    beperkt tot medewerkers die die toegang nodig hebben. Geüploade afbeeldingen worden
+    heropgebouwd voordat ze worden gepubliceerd, waarbij locatiegegevens en andere verborgen
+    informatie uit het bestand verdwijnen — anders zou een foto van je etalage je thuisadres kunnen
+    prijsgeven.
+  </p>
+
+  <h2>9. Jouw rechten</h2>
+  <p>
+    Je hebt het recht op inzage in je gegevens, op correctie, op verwijdering, op beperking van de
+    verwerking, op bezwaar tegen verwerking op grond van gerechtvaardigd belang, en op overdracht
+    van je gegevens in een gangbaar bestandsformaat. Stuur je verzoek naar het e-mailadres in
+    artikel 1; we reageren binnen een maand. Ben je het oneens met hoe we je verzoek behandelen,
+    dan kun je een klacht indienen bij de Autoriteit Persoonsgegevens.
+  </p>
+
+  <h2>10. Onze rol bij de websites van klanten</h2>
+  <p>
+    Als een bezoeker een contactformulier invult op een website die met {brand.name} is gemaakt,
+    dan is de ondernemer achter die website verantwoordelijk voor die gegevens en zijn wij
+    verwerker. Wij gebruiken die berichten uitsluitend om ze bij de betreffende ondernemer af te
+    leveren.
+  </p>
+
+  <h2>11. Wijzigingen</h2>
+  <p>
+    We passen deze verklaring aan wanneer de dienst verandert. De datum bovenaan geeft aan wanneer
+    de tekst voor het laatst inhoudelijk is gewijzigd. Bij een ingrijpende wijziging informeren we
+    accounthouders per e-mail.
+  </p>
+</Legal>

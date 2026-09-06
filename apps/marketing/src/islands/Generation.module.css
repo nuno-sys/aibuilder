@@ -1,0 +1,528 @@
+/* =================================================================================================
+ * Act 7 — the generation theatre, its preview and the reveal.
+ *
+ * Layout: at ≥1024 px a 380 px status rail beside the live preview; below that one column with the
+ * preview pinned to the top of the viewport and the status scrolling underneath it.
+ * ============================================================================================== */
+
+.theatre {
+  display: grid;
+  gap: var(--space-6);
+}
+
+@media (min-width: 1024px) {
+  .theatre {
+    grid-template-columns: 380px minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+/* --- Status rail ------------------------------------------------------------------------------ */
+
+.rail {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.railTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: var(--ls-xl);
+  color: var(--fg-primary);
+}
+
+.bar {
+  block-size: 6px;
+  border-radius: var(--radius-full);
+  background: var(--n-200);
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  block-size: 100%;
+  inline-size: var(--progress, 0%);
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--brand-600), var(--violet-500));
+  /* Kept under reduced motion: only the interpolation between events is switched off, never the
+     transition itself (UX §5.6). */
+  transition: inline-size var(--bar-duration, 400ms) var(--ease-out-quint);
+}
+
+.percent {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-tertiary);
+}
+
+.acts {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.actRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--n-400);
+  transition:
+    color var(--dur-3) var(--ease-out-quint),
+    transform var(--dur-3) var(--ease-out-quint);
+}
+
+.actActive {
+  color: var(--fg-primary);
+  font-weight: 600;
+}
+
+.actDone {
+  color: var(--fg-tertiary);
+  transform: translateY(-2px);
+}
+
+.actTick {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 18px;
+  block-size: 18px;
+  margin-block-start: 2px;
+  border: 1px solid currentcolor;
+  border-radius: var(--radius-full);
+  opacity: 0.4;
+}
+
+.actTick svg {
+  inline-size: 10px;
+  block-size: 10px;
+  /* Drawn on completion: the stroke is dashed to its own length and the offset animates to zero. */
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+}
+
+.actDone .actTick {
+  opacity: 1;
+  border-color: var(--success-600);
+  color: var(--success-600);
+}
+
+.actDone .actTick svg {
+  animation: tick-draw var(--dur-3) var(--ease-out-quint) forwards;
+}
+
+@keyframes tick-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.actText {
+  min-inline-size: 0;
+}
+
+.detail {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-secondary);
+}
+
+.slow {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--warning-700);
+}
+
+.release {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-4);
+  border: 1px solid var(--warning-500);
+  border-radius: var(--radius-md);
+  background: var(--warning-50);
+}
+
+.failed {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--danger-700);
+}
+
+/* --- Stage and preview ------------------------------------------------------------------------- */
+
+.stage {
+  position: relative;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.stageInner {
+  filter: blur(6px);
+  opacity: 0.85;
+  transform: scale(0.96);
+  transition:
+    filter var(--reveal, 520ms) var(--ease-out-quint),
+    opacity var(--reveal, 520ms) var(--ease-out-quint),
+    transform var(--reveal, 520ms) var(--ease-out-quint);
+}
+
+.stageRevealed {
+  filter: none;
+  opacity: 1;
+  transform: none;
+}
+
+.preview {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-page);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.previewChrome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-2) var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+}
+
+.previewDot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--radius-full);
+  background: var(--n-300);
+}
+
+.previewTitle {
+  margin-inline-start: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewBody {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  min-block-size: 320px;
+  background: var(--bg-page);
+  transition: background-color var(--dur-6) var(--ease-out-quint);
+}
+
+.previewThemed {
+  background: var(--brand-25);
+}
+
+.palette {
+  display: flex;
+  gap: var(--space-1);
+  opacity: 0;
+}
+
+.paletteOn {
+  opacity: 1;
+}
+
+.swatch {
+  inline-size: 28px;
+  block-size: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-200);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.paletteOn .swatch {
+  animation: swatch-wipe var(--dur-4) var(--ease-out-quint) var(--swatch-delay, 0ms) forwards;
+}
+
+.swatch:nth-child(2) {
+  background: var(--brand-400);
+}
+
+.swatch:nth-child(3) {
+  background: var(--brand-600);
+}
+
+.swatch:nth-child(4) {
+  background: var(--n-800);
+}
+
+.swatch:nth-child(5) {
+  background: var(--violet-400);
+}
+
+@keyframes swatch-wipe {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.previewMedia {
+  block-size: 96px;
+  border-radius: var(--radius-md);
+  background: var(--n-100);
+  filter: blur(12px);
+  transition:
+    filter var(--dur-6) var(--ease-out-quint),
+    background-color var(--dur-6) var(--ease-out-quint);
+}
+
+.previewMediaResolved {
+  filter: none;
+  background: linear-gradient(135deg, var(--brand-200), var(--violet-400));
+}
+
+.slot {
+  overflow: hidden;
+}
+
+.skeletonGroup {
+  display: grid;
+  gap: var(--space-1-5);
+}
+
+.skeletonLine {
+  display: block;
+  block-size: 12px;
+  inline-size: var(--line-width, 100%);
+  border-radius: var(--radius-xs);
+  background: linear-gradient(100deg, var(--n-100) 20%, var(--n-200) 50%, var(--n-100) 80%);
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.6s linear infinite;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 150% 0;
+  }
+
+  to {
+    background-position: -50% 0;
+  }
+}
+
+.slotText {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-secondary);
+  animation: slot-in var(--fade, 160ms) var(--ease-out-quint) both;
+}
+
+.slotHeadline {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: var(--ls-xl);
+  color: var(--fg-primary);
+}
+
+@keyframes slot-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- Reveal ------------------------------------------------------------------------------------ */
+
+.reveal {
+  position: relative;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-page);
+  box-shadow: var(--shadow-xl);
+  animation: reveal-rise var(--reveal, 520ms) var(--ease-spring) both;
+}
+
+@keyframes reveal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.revealTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: var(--ls-2xl);
+  color: var(--fg-primary);
+}
+
+.revealDomain {
+  position: relative;
+  justify-self: start;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.revealDomain:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* The sheen: one pass, 700 ms, purely decorative and removed entirely under reduced motion. */
+.revealDomain::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inline-size: 40%;
+  inset-inline-start: -40%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.65), transparent);
+  animation: sheen 700ms var(--ease-out-quint) 400ms 1;
+}
+
+@keyframes sheen {
+  to {
+    inset-inline-start: 120%;
+  }
+}
+
+.revealDomainText {
+  position: relative;
+}
+
+.revealBody {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-secondary);
+}
+
+.revealNote {
+  margin: 0;
+  align-self: center;
+  font-size: var(--text-xs);
+  color: var(--fg-tertiary);
+}
+
+.confetti {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 0;
+  pointer-events: none;
+}
+
+.particle {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: var(--x, 50%);
+  inline-size: 6px;
+  block-size: 10px;
+  border-radius: 1px;
+  background: var(--brand-500);
+  animation: confetti 900ms var(--ease-out-quint) var(--delay, 0ms) both;
+}
+
+.particle:nth-child(even) {
+  background: var(--violet-500);
+}
+
+.particle:nth-child(3n) {
+  background: var(--success-500);
+}
+
+@keyframes confetti {
+  from {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(120px) rotate(var(--rotate, 60deg));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stageInner {
+    filter: none;
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .skeletonLine {
+    animation: none;
+    background: var(--n-100);
+  }
+
+  .paletteOn .swatch,
+  .actDone .actTick svg,
+  .reveal,
+  .slotText {
+    animation: none;
+    transform: none;
+  }
+
+  .paletteOn .swatch {
+    transform: scaleX(1);
+  }
+
+  .actDone .actTick svg {
+    stroke-dashoffset: 0;
+  }
+
+  .revealDomain::after {
+    display: none;
+  }
+
+  .previewMedia {
+    filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .barFill {
+    background: Highlight;
+  }
+
+  .preview,
+  .reveal {
+    border: 1px solid CanvasText;
+  }
+
+  .particle,
+  .revealDomain::after {
+    display: none;
+  }
+}

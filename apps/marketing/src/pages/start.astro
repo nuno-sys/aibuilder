@@ -1,0 +1,99 @@
+---
+/**
+ * `/start/` — the deep-linkable entry point of the onboarding flow.
+ *
+ * This is a REAL page, not a JavaScript route. That is what makes the whole history model work
+ * (architecture §3b, UX §7.4): every step advance is `history.pushState({step:n}, '',
+ * '/start?step=' + n)`, back and forward move between steps via `popstate`, and iOS Safari's
+ * swipe-back is respected because the entries are genuine history entries. A deep link with a step
+ * the draft has not reached is clamped to `furthest_step + 1` by the island — you can never link
+ * someone past validation.
+ *
+ * `noindex, follow`: the page's whole content is a modal, its URL carries `?step=` and `?job=`
+ * variants, and indexing it would put a near-empty duplicate of the home page's call to action in
+ * the index. Crawling stays allowed, so the `noindex` is actually seen — a `Disallow` here would
+ * hide the directive and leave the URL indexed (SEO §2.3).
+ */
+import CtaButton from '../components/CtaButton.astro';
+import Base from '../layouts/Base.astro';
+import { plan } from '../content/pricing';
+---
+
+<Base
+  title="Beginnen"
+  description="Beantwoord zes korte vragen over je onderneming en laat je website opbouwen."
+  noindex
+>
+  <section class="section start">
+    <div class="container container--narrow">
+      <p class="eyebrow">Beginnen</p>
+      <h1 class="start__title">Zes vragen, en je website wordt opgebouwd</h1>
+      <p class="lead">
+        Je hebt je bedrijfsnaam, je adres, je openingstijden en een telefoonnummer of e-mailadres
+        nodig. Meer niet. Je kunt tussendoor stoppen en later verdergaan: je antwoorden worden
+        bewaard.
+      </p>
+
+      <ul class="start__points">
+        <li>Duurt ongeveer twee tot drie minuten.</li>
+        <li>Foto’s toevoegen mag, maar is niet verplicht.</li>
+        <li>{plan.trialDays} dagen gratis proberen; je kunt in die periode kosteloos opzeggen.</li>
+      </ul>
+
+      <div class="start__action">
+        <CtaButton size="lg">Beginnen</CtaButton>
+      </div>
+
+      {/*
+        Without JavaScript the modal cannot run. Saying so plainly, with a working alternative, is
+        better than a button that silently does nothing.
+      */}
+      <noscript>
+        <p class="start__noscript">
+          Voor het invullen van de vragenlijst is JavaScript nodig. Staat dat uit, zet het dan aan
+          voor deze pagina, of neem contact met ons op — dan lopen we de vragen samen door.
+        </p>
+      </noscript>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .start {
+    padding-block: calc(var(--nav-h) + var(--space-16)) var(--section-y);
+  }
+
+  .start__title {
+    max-inline-size: 20ch;
+    margin-block-start: var(--space-2);
+  }
+
+  .start .lead {
+    margin-block-start: var(--space-6);
+  }
+
+  .start__points {
+    margin-block-start: var(--space-6);
+    padding-inline-start: var(--space-6);
+    color: var(--fg-secondary);
+  }
+
+  .start__points li + li {
+    margin-block-start: var(--space-2);
+  }
+
+  .start__action {
+    margin-block-start: var(--space-8);
+  }
+
+  .start__noscript {
+    display: block;
+    max-inline-size: var(--measure);
+    margin-block-start: var(--space-6);
+    padding: var(--space-4);
+    border: 1px solid var(--warning-500);
+    border-radius: var(--radius-md);
+    background: var(--warning-50);
+    color: var(--n-800);
+  }
+</style>

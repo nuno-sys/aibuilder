@@ -1,0 +1,155 @@
+---
+/**
+ * Algemene voorwaarden.
+ *
+ * The clauses that actually matter for this product are the ones about generated content: who owns
+ * it, who is responsible for checking it, and what is explicitly not promised. A generator that
+ * writes confident prose about a business it has never seen needs the customer to be told, in the
+ * contract and not only in the interface, that verification is theirs.
+ */
+import Legal from '../layouts/Legal.astro';
+import { brand, legalEntity, sitesRootDomain } from '../content/site';
+import { formatEuro, plan } from '../content/pricing';
+---
+
+<Legal
+  title="Algemene voorwaarden"
+  description="De voorwaarden waaronder je onze dienst gebruikt: proefperiode, prijs, opzegging, gebruik en aansprakelijkheid."
+  intro="Deze voorwaarden gelden voor het gebruik van onze dienst. Lees ze door voordat je begint; door een website te laten maken ga je ermee akkoord."
+>
+  <h2>1. Definities</h2>
+  <ul>
+    <li>
+      <strong>Wij</strong>: {legalEntity.legalName}, ingeschreven bij de Kamer van Koophandel onder
+      nummer {legalEntity.chamberOfCommerce}.
+    </li>
+    <li><strong>Dienst</strong>: {brand.name}, inclusief het opbouwen en hosten van je website.</li>
+    <li><strong>Klant</strong>: de onderneming of persoon die de dienst afneemt.</li>
+    <li>
+      <strong>Website</strong>: de door de dienst opgebouwde website, gepubliceerd op een adres
+      onder {sitesRootDomain}.
+    </li>
+  </ul>
+
+  <h2>2. Toepasselijkheid</h2>
+  <p>
+    Deze voorwaarden gelden voor elke overeenkomst tussen ons en de klant. Afwijkende voorwaarden
+    van de klant gelden alleen wanneer we die schriftelijk hebben aanvaard.
+  </p>
+
+  <h2>3. Totstandkoming van de overeenkomst</h2>
+  <p>
+    De overeenkomst komt tot stand wanneer de klant de vragenlijst afrondt en wij de opdracht
+    bevestigen. We mogen een opdracht weigeren, bijvoorbeeld wanneer de opgegeven gegevens
+    klaarblijkelijk niet van de klant zijn of wanneer het gevraagde in strijd is met artikel 8.
+  </p>
+
+  <h2>4. Proefperiode</h2>
+  <p>
+    De proefperiode duurt {plan.trialDays} dagen en gaat in op het moment dat het abonnement wordt
+    afgesloten. Bij de start vragen we een geldige betaalmethode; tijdens de proefperiode wordt er
+    niets afgeschreven. Zegt de klant binnen de proefperiode op, dan zijn er geen kosten. Per
+    onderneming geldt één proefperiode.
+  </p>
+
+  <h2>5. Prijzen en betaling</h2>
+  <p>
+    Het abonnement kost {formatEuro(plan.monthlyEur)} per maand en wordt jaarlijks gefactureerd:
+    {formatEuro(plan.annualTotalEur)} per jaar. Alle bedragen zijn exclusief btw. Na afloop van de
+    proefperiode wordt het jaarbedrag in één keer afgeschreven via onze betaaldienstverlener.
+    Blijft betaling uit, dan mogen we de website na een herinnering en een redelijke termijn
+    offline halen.
+  </p>
+
+  <h2>6. Looptijd, verlenging en opzegging</h2>
+  <p>
+    Het abonnement loopt twaalf maanden en wordt daarna telkens met twaalf maanden verlengd,
+    tenzij de klant vóór de verlengingsdatum opzegt. Opzeggen kan via je account of per e-mail. Bij
+    opzegging blijft de website online tot het einde van de betaalde periode. Reeds betaalde
+    bedragen worden niet naar rato terugbetaald, behalve waar de wet dat voorschrijft.
+  </p>
+
+  <h2>7. Herroepingsrecht</h2>
+  <p>
+    Het wettelijke herroepingsrecht van veertien dagen geldt voor consumenten. Onze dienst richt
+    zich op ondernemers; koopt een consument de dienst toch, dan geldt dat recht onverkort, met
+    dien verstande dat het vervalt zodra de website op uitdrukkelijk verzoek van de consument is
+    opgebouwd en gepubliceerd.
+  </p>
+
+  <h2>8. Gebruik van de dienst</h2>
+  <p>De klant gebruikt de dienst niet voor:</p>
+  <ul>
+    <li>het publiceren van gegevens van een onderneming waarover de klant niet mag beschikken;</li>
+    <li>
+      inhoud die in strijd is met de wet, waaronder discriminerende, bedreigende, misleidende of
+      inbreukmakende inhoud;
+    </li>
+    <li>
+      het opzettelijk beïnvloeden van zoekresultaten met verborgen tekst, doorverwijspagina’s of
+      grootschalig gedupliceerde inhoud;
+    </li>
+    <li>het aanmaken van websites op geautomatiseerde of grootschalige wijze.</li>
+  </ul>
+  <p>
+    De klant staat ervoor in dat hij gerechtigd is de opgegeven bedrijfsgegevens, foto’s en
+    handelsnaam te gebruiken. Bij een overtreding mogen we de website opschorten of verwijderen.
+  </p>
+
+  <h2>9. Door software gegenereerde inhoud</h2>
+  <p>
+    De teksten en de opbouw van de website worden gegenereerd door een taalmodel op basis van de
+    antwoorden van de klant. Zulke teksten lezen overtuigend, maar het model kent de onderneming
+    niet. De klant controleert de gepubliceerde inhoud daarom op feitelijke juistheid — zeker
+    openingstijden, prijzen, garanties en beroepsmatige claims — en blijft daarvoor
+    verantwoordelijk. We garanderen geen specifieke positie in zoekmachines en geen specifiek
+    aantal bezoekers of aanvragen: dat hangt af van factoren buiten onze invloed.
+  </p>
+
+  <h2>10. Intellectuele eigendom</h2>
+  <p>
+    De inhoud van de website — teksten, foto’s en bedrijfsgegevens — blijft van de klant. De klant
+    mag die inhoud gebruiken, aanpassen en meenemen. De onderliggende software, de sjablonen en de
+    vormgevingssystemen blijven van ons. Beeldmateriaal uit onze beeldbank wordt geleverd onder de
+    licentie van de betreffende leverancier en mag alleen worden gebruikt binnen de website waarin
+    het is geplaatst.
+  </p>
+
+  <h2>11. Beschikbaarheid en onderhoud</h2>
+  <p>
+    We spannen ons in om de dienst beschikbaar te houden, maar geven geen beschikbaarheidsgarantie.
+    Onderhoud dat de dienst merkbaar onderbreekt, kondigen we vooraf aan wanneer dat redelijkerwijs
+    mogelijk is. We mogen de dienst doorontwikkelen en onderdelen wijzigen, zolang de kern van wat
+    is overeengekomen in stand blijft.
+  </p>
+
+  <h2>12. Aansprakelijkheid</h2>
+  <p>
+    Onze aansprakelijkheid is beperkt tot het bedrag dat de klant in de twaalf maanden voorafgaand
+    aan de schadeveroorzakende gebeurtenis heeft betaald. We zijn niet aansprakelijk voor
+    gevolgschade, gederfde omzet of gemiste opdrachten. Deze beperkingen gelden niet bij opzet of
+    bewuste roekeloosheid aan onze zijde, en niet voor zover de wet ze verbiedt.
+  </p>
+
+  <h2>13. Persoonsgegevens</h2>
+  <p>
+    Hoe we persoonsgegevens verwerken staat in de <a href="/privacy/">privacyverklaring</a>. Voor
+    de gegevens die bezoekers achterlaten op de website van de klant zijn wij verwerker en is de
+    klant verwerkingsverantwoordelijke; de afspraken daarover maken deel uit van deze
+    overeenkomst.
+  </p>
+
+  <h2>14. Wijziging van de voorwaarden</h2>
+  <p>
+    We mogen deze voorwaarden wijzigen. Een wijziging kondigen we ten minste 30 dagen van tevoren
+    per e-mail aan. Is de klant het niet eens met een wijziging die hem nadelig raakt, dan mag hij
+    het abonnement per de ingangsdatum van de wijziging opzeggen.
+  </p>
+
+  <h2>15. Toepasselijk recht en geschillen</h2>
+  <p>
+    Op deze overeenkomst is Nederlands recht van toepassing. Geschillen worden voorgelegd aan de
+    bevoegde rechter in het arrondissement van onze vestigingsplaats, tenzij de wet dwingend een
+    andere rechter aanwijst.
+  </p>
+</Legal>

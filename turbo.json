@@ -1,0 +1,52 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+
+  "globalDependencies": ["tsconfig.base.json", ".nvmrc", "migrations/**"],
+  "globalEnv": ["CI", "ENVIRONMENT"],
+  "globalPassThroughEnv": [
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_API_TOKEN",
+    "WRANGLER_LOG",
+    "WRANGLER_SEND_METRICS"
+  ],
+
+  "tasks": {
+    "//#lint": {
+      "outputs": [],
+      "inputs": [
+        "eslint.config.js",
+        "apps/**/*.{ts,tsx,mts,js,mjs}",
+        "packages/**/*.{ts,tsx,mts,js,mjs}"
+      ]
+    },
+
+    "lint": {
+      "dependsOn": [],
+      "outputs": []
+    },
+
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": [],
+      "inputs": ["$TURBO_DEFAULT$", "wrangler.jsonc", "worker-configuration.d.ts"]
+    },
+
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".astro/**"],
+      "inputs": ["$TURBO_DEFAULT$", "wrangler.jsonc"]
+    },
+
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "inputs": ["$TURBO_DEFAULT$", "wrangler.jsonc"]
+    },
+
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Turborepo and Wrangler both phone home by default; CI is not a place to opt in silently.
+  TURBO_TELEMETRY_DISABLED: "1"
+  WRANGLER_SEND_METRICS: "false"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  verify:
+    name: typecheck / lint / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        # Version comes from the root package.json `packageManager` field.
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        # Each app regenerates its `Env` from wrangler.jsonc in `pretypecheck`, so a binding added
+        # to a config but not to the code (or the reverse) fails here rather than at deploy.
+        run: pnpm run typecheck
+
+      - name: Lint
+        # One root ESLint pass. eslint-plugin-boundaries classifies files by their path from the
+        # repo root, so running it per package would silently disable the architecture rules.
+        run: pnpm run lint
+
+      - name: Test
+        # Includes the D1 gates that live in packages/db: `EXPLAIN QUERY PLAN` over every shipped
+        # statement failing on any SCAN, and the per-table row-count snapshot around each migration.
+        run: pnpm run test
+
+  secrets:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # gitleaks scans history, not just the working tree.
+          fetch-depth: 0
+
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Required only for repositories owned by a GitHub organisation; personal repositories
+          # and public repositories run without it.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+# Phase 2: performance and accessibility gates.
+#
+# They are commented out rather than stubbed because the surfaces they measure do not exist in this
+# delivery yet, and a gate that cannot fail is worse than no gate.
+#
+#   · The contrast gate is analytical, not browser-based: it proves the OKLCH palette over the full
+#     design-DNA knob space in pure code (architecture §10, risk 4) and belongs in `pnpm test` above
+#     as soon as packages/site-kit/src/tokens exists.
+#   · The layout gate is a SAMPLE — roughly 200 renders (4 archetypes x 3 variants x 17 sections x
+#     longest-string locale) plus a nightly randomised sweep. Rendering every combination would be
+#     ~440,000 browser renders per run and is not affordable; the honest guarantee is
+#     "contrast proven, layout sampled".
+#
+#  lighthouse:
+#    name: Lighthouse (tenant renderer)
+#    runs-on: ubuntu-latest
+#    needs: verify
+#    steps:
+#      - uses: actions/checkout@v5
+#      - uses: pnpm/action-setup@v4
+#      - uses: actions/setup-node@v5
+#        with:
+#          node-version-file: .nvmrc
+#          cache: pnpm
+#      - run: pnpm install --frozen-lockfile
+#      - run: pnpm --filter @aibuilder/renderer run build:fixtures
+#      - uses: treosh/lighthouse-ci-action@v12
+#        with:
+#          configPath: ./apps/renderer/lighthouserc.json

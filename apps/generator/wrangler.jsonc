@@ -1,0 +1,153 @@
+{
+  // ================================================================================================
+  // aibuilder-generator — the Workflow, the three Durable Objects and the media consumer
+  // (architecture §S2, "apps/generator/wrangler.jsonc").
+  //
+  // NO PUBLIC ROUTE, AND THAT IS THE POINT. This is the only Worker that holds ANTHROPIC_API_KEY.
+  // Capability separation on Workers means splitting Workers (§8), so the single reachable path
+  // into this script is the `GENERATOR` service binding declared by `aibuilder-api`. Adding a
+  // `routes` entry here would put an unauthenticated internet path in front of the model key.
+  //
+  // PLACEHOLDERS. Every `REPLACE_WITH_REAL_ID` is created by the operator in the order the root
+  // README's "Bootstrap" section gives. Nothing here may be invented: D1 jurisdiction, R2
+  // jurisdiction and Durable Object jurisdiction are all fixed at creation and cannot be changed
+  // afterwards (§9, one-way doors 1-3). The DO jurisdiction is not configured here at all — it is
+  // applied in code, in `src/do/jurisdiction.ts`, because it belongs to the *id*, not the binding.
+  // ================================================================================================
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aibuilder-generator",
+  "main": "src/index.ts",
+  // >= 2026-08-04 enables nodejs_compat v2 implicitly; the explicit flag is belt and braces.
+  // Pinned to 2026-08-22, not a later date: this is the newest compatibility date the workerd
+  // binary bundled with the installed wrangler/miniflare accepts, and the test pool and production
+  // must run the SAME date or the suite stops proving anything about what deploys. It is still past
+  // 2026-08-04, so `nodejs_compat` v2 is implicit. Raise both together when workerd catches up.
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // A generation is four Opus calls, a JSON assembly pass and a lint sweep. The default 30 s of CPU
+  // is a wall the assemble step hits on a large site; wall-clock waiting on the model is not CPU
+  // time and is not what this bounds. 300 s is the platform maximum for a paid plan.
+  "limits": { "cpu_ms": 300000 },
+
+  // The Workflow binding. The instance id IS the job id (`job_01H…`, which satisfies Cloudflare's
+  // `^[a-zA-Z0-9_][a-zA-Z0-9-_]*$`), so a duplicate dispatch collides instead of double-billing.
+  "workflows": [
+    {
+      "binding": "SITEGEN",
+      "name": "site-generation",
+      "class_name": "SiteGenerationWorkflow",
+    },
+  ],
+
+  // All three objects live here, and `aibuilder-api` binds them with `script_name` pointing at this
+  // script: money and quotas are counted in exactly one place, and that place is not the Worker
+  // that faces the public internet.
+  "durable_objects": {
+    "bindings": [
+      { "name": "JOB_HUB", "class_name": "JobHub" },
+      { "name": "QUOTA", "class_name": "QuotaDO" },
+      { "name": "BUDGET", "class_name": "BudgetDO" },
+    ],
+  },
+
+  // SQLite-backed from the first deploy. `new_sqlite_classes` is only honoured when a class is
+  // introduced; converting a key-value class later is not possible, so this tag is a one-way door
+  // of its own and is taken now while all three tables are empty.
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["JobHub", "QuotaDO", "BudgetDO"],
+    },
+  ],
+
+  // The media verify/re-encode consumer (§8, uploads). `max_batch_size` is small because each
+  // message re-encodes an image through the Images binding, which is CPU and subrequest work, not
+  // a cheap row update. Two retries then the DLQ: a third attempt at a file that has failed twice
+  // is a file that needs a human, and silently dropping it would leave the row stuck at
+  // `verifying` forever.
+  "queues": {
+    "consumers": [
+      {
+        "queue": "aibuilder-media",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 2,
+        "dead_letter_queue": "aibuilder-media-dlq",
+      },
+    ],
+  },
+
+  "d1_databases": [
+    {
+      "binding": "CP",
+      "database_name": "aibuilder-cp",
+      "database_id": "REPLACE_WITH_REAL_ID",
+      "migrations_dir": "../../migrations/cp",
+    },
+    {
+      "binding": "SHARD_000",
+      "database_name": "aibuilder-shard-000",
+      "database_id": "REPLACE_WITH_REAL_ID",
+      "migrations_dir": "../../migrations/shard",
+    },
+  ],
+
+  // BLOBS and MEDIA are the two §S2 names. QUARANTINE is the documented addition: the media
+  // verify/re-encode consumer lives in this Worker, and it cannot sniff, re-encode and then DELETE
+  // an unverified object it has no binding for. Leaving the quarantine object behind would defeat
+  // the 24-hour lifecycle rule's purpose, which is that an unverified object never outlives the
+  // draft that produced it.
+  "r2_buckets": [
+    { "binding": "BLOBS", "bucket_name": "aibuilder-blobs", "jurisdiction": "eu" },
+    { "binding": "MEDIA", "bucket_name": "aibuilder-media", "jurisdiction": "eu" },
+    { "binding": "QUARANTINE", "bucket_name": "aibuilder-quarantine", "jurisdiction": "eu" },
+  ],
+
+  // Stock lookups are cached by composed-query hash. Pexels' default allowance is 200 requests per
+  // hour and 20,000 per month (§S3), which without this cache throttles signup throughput to
+  // roughly 20-30 sites an hour.
+  "kv_namespaces": [{ "binding": "STOCK_CACHE", "id": "REPLACE_WITH_REAL_ID" }],
+
+  // Mandatory re-encode of every accepted upload (§8). Not listed in the §S2 summary line, and
+  // required by it: "re-encode through the Images binding with metadata:'none'" is this Worker's
+  // queue consumer.
+  "images": { "binding": "IMAGES" },
+
+  // Per-step cost and outcome, written from `response.usage`. The D1 ledger is the system of
+  // record; this is the aggregate view that survives a shard being busy (§10 risk 2).
+  "analytics_engine_datasets": [{ "binding": "AE", "dataset": "aibuilder_gen" }],
+
+  // Secrets Store rather than plain Worker secrets, so rotation is independent of a deploy. The
+  // code reads them through `readSecret()`, which also accepts a plain string binding so
+  // `wrangler secret put` keeps working while Secrets Store is in open beta (§8).
+  "secrets_store_secrets": [
+    {
+      "binding": "ANTHROPIC_API_KEY",
+      "store_id": "REPLACE_WITH_REAL_ID",
+      "secret_name": "anthropic_api_key",
+    },
+    { "binding": "PEXELS_KEY", "store_id": "REPLACE_WITH_REAL_ID", "secret_name": "pexels_key" },
+  ],
+
+  "vars": {
+    "ENVIRONMENT": "production",
+
+    // Pinned in `vars` so the model id is a deploy-time decision rather than a code edit. Never
+    // date-suffixed: a suffixed variant is not a real model id (VERIFIED-FACTS.md).
+    "ANTHROPIC_MODEL": "claude-opus-5",
+
+    // Generated sites live at `<slug>.${SITES_ROOT_DOMAIN}`, on a different registrable domain from
+    // APP_ORIGIN, permanently (§1.1).
+    "SITES_ROOT_DOMAIN": "mijnsaas.com",
+
+    // Cookieless media host. Read by the publish step to build absolute asset URLs.
+    "MEDIA_ORIGIN": "https://cdn.mijnsaas.com",
+
+    // `media_assets.r2_bucket` stores the bucket NAME, which an R2 binding does not expose. Keep
+    // each equal to the matching `bucket_name` above.
+    "R2_MEDIA_BUCKET": "aibuilder-media",
+    "R2_BLOBS_BUCKET": "aibuilder-blobs",
+  },
+}

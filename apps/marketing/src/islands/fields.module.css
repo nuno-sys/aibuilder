@@ -1,0 +1,328 @@
+/* =================================================================================================
+ * The shared field system for all six steps.
+ *
+ * Conventions from UX §2, applied here once rather than per step:
+ *   - every control is at least 44 px tall on touch and has a 44 px hit area on fine pointers
+ *   - 1 px --border-default, 2 px --brand-600 on focus, plus a 3 px --brand-100 halo
+ *   - inputs are 16 px minimum: anything smaller makes iOS Safari zoom the page on focus, and the
+ *     zoom does not undo itself
+ *   - an errored field gets a thicker border AND an icon AND a message — colour is never the only
+ *     signal (SC 1.4.1)
+ * ============================================================================================== */
+
+.field {
+  display: grid;
+  gap: var(--space-1-5);
+}
+
+.field + .field {
+  margin-block-start: var(--space-5);
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--lh-sm);
+  color: var(--fg-primary);
+}
+
+.hint {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-secondary);
+}
+
+.input,
+.select,
+.textarea {
+  inline-size: 100%;
+  min-block-size: 48px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+  color: var(--fg-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  letter-spacing: var(--ls-md);
+  /* Prevents the iOS "inner shadow" default that makes an input look pressed. */
+  appearance: none;
+}
+
+.inputLarge {
+  min-block-size: 56px;
+  font-size: var(--text-xl);
+  line-height: var(--lh-xl);
+  letter-spacing: var(--ls-xl);
+}
+
+.textarea {
+  min-block-size: 96px;
+  resize: vertical;
+  line-height: var(--lh-md);
+}
+
+.select {
+  padding-inline-end: var(--space-8);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--n-500) 50%),
+    linear-gradient(135deg, var(--n-500) 50%, transparent 50%);
+  background-position:
+    right var(--space-4) center,
+    right calc(var(--space-4) - 5px) center;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  /* Never lighter than --n-500: a placeholder below 4.5:1 is unreadable, and it is never a label. */
+  color: var(--fg-tertiary);
+}
+
+.input:focus-visible,
+.select:focus-visible,
+.textarea:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  border-width: 2px;
+  /* The border grows by 1 px; the padding shrinks by 1 px so nothing reflows on focus. */
+  padding: calc(var(--space-3) - 1px) calc(var(--space-4) - 1px);
+  box-shadow: var(--shadow-focus);
+}
+
+.input[aria-invalid='true'],
+.select[aria-invalid='true'],
+.textarea[aria-invalid='true'] {
+  border-color: var(--danger-500);
+  border-width: 2px;
+  padding: calc(var(--space-3) - 1px) calc(var(--space-4) - 1px);
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--danger-700);
+}
+
+.errorIcon {
+  flex: none;
+  inline-size: 16px;
+  block-size: 16px;
+  margin-block-start: 3px;
+}
+
+.success {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--success-700);
+}
+
+/* --- Chips (presets, popular industries, tone) --------------------------------------------- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: 44px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-page);
+  color: var(--fg-secondary);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-2) var(--ease-out-quint),
+    background-color var(--dur-2) var(--ease-out-quint),
+    color var(--dur-2) var(--ease-out-quint);
+}
+
+.chip:hover {
+  border-color: var(--border-strong);
+  color: var(--fg-primary);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+
+.chipSelected {
+  border-color: var(--brand-600);
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+
+/* --- Buttons -------------------------------------------------------------------------------- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-block-size: 48px;
+  padding: var(--space-3) var(--space-6);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: var(--lh-md);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-2) var(--ease-out-quint),
+    border-color var(--dur-2) var(--ease-out-quint),
+    transform var(--dur-1) var(--ease-in);
+}
+
+.button:active {
+  transform: scale(0.985);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+
+.button[disabled],
+.button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.buttonPrimary {
+  background: var(--brand-600);
+  color: var(--fg-on-brand);
+}
+
+.buttonPrimary:hover:not([disabled]) {
+  background: var(--brand-700);
+}
+
+.buttonSecondary {
+  border-color: var(--border-default);
+  background: var(--bg-page);
+  color: var(--fg-primary);
+}
+
+.buttonSecondary:hover:not([disabled]) {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.buttonGhost {
+  background: none;
+  color: var(--fg-brand);
+  font-weight: 500;
+}
+
+.buttonGhost:hover:not([disabled]) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.buttonBlock {
+  inline-size: 100%;
+}
+
+/* --- Checkbox and switch --------------------------------------------------------------------- */
+
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-block-size: 44px;
+  padding-block: var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.checkboxInput {
+  flex: none;
+  inline-size: 20px;
+  block-size: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--brand-600);
+}
+
+.checkboxInput:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* --- Layout helpers -------------------------------------------------------------------------- */
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.rowTight {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.divider {
+  block-size: 1px;
+  margin-block: var(--space-5);
+  border: 0;
+  background: var(--border-subtle);
+}
+
+.card {
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+@media (prefers-contrast: more) {
+  .input,
+  .select,
+  .textarea,
+  .chip,
+  .card {
+    border-color: var(--n-700);
+  }
+}
+
+@media (forced-colors: active) {
+  .chipSelected {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .buttonPrimary {
+    border: 1px solid CanvasText;
+  }
+}

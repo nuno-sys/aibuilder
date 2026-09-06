@@ -1,0 +1,127 @@
+---
+/**
+ * The FAQ accordion plus its `FAQPage` structured data.
+ *
+ * The visible answer and `acceptedAnswer.text` are rendered from the same string, so the markup can
+ * never describe something other than what the page shows — the one rule Google's structured-data
+ * policy is unambiguous about.
+ *
+ * Zero JavaScript: `<details>`/`<summary>` gives keyboard operation, screen-reader semantics and
+ * the open/closed state for free. A scripted accordion here would be pure INP cost.
+ *
+ * This emits a second JSON-LD block alongside the layout's `@graph`. Multiple blocks are merged by
+ * consumers; the single-`@graph` rule in architecture §7.11 is a renderer invariant for tenant
+ * pages, where the graph is assembled in one place from D1 facts.
+ */
+import { faq } from '../content/faq';
+import JsonLd from './JsonLd.astro';
+
+interface Props {
+  readonly id: string;
+  readonly eyebrow: string;
+  readonly title: string;
+}
+
+const { id, eyebrow, title } = Astro.props;
+
+const pageUrl = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
+
+const faqJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  '@id': `${pageUrl}#${id}`,
+  inLanguage: 'nl-NL',
+  mainEntity: faq.map((item) => ({
+    '@type': 'Question',
+    name: item.question,
+    acceptedAnswer: { '@type': 'Answer', text: item.answer },
+  })),
+};
+---
+
+<section class="section section--deferred faq" id={id} style="contain-intrinsic-size: auto 900px">
+  <div class="container container--narrow">
+    <p class="eyebrow">{eyebrow}</p>
+    <h2>{title}</h2>
+
+    <div class="faq__list">
+      {
+        faq.map((item) => (
+          <details class="faq__item">
+            <summary class="faq__question">
+              <span>{item.question}</span>
+              <svg
+                class="faq__chevron"
+                width="20"
+                height="20"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="m5 7.5 5 5 5-5" />
+              </svg>
+            </summary>
+            <p class="faq__answer">{item.answer}</p>
+          </details>
+        ))
+      }
+    </div>
+  </div>
+
+  <JsonLd data={faqJsonLd} />
+</section>
+
+<style>
+  .faq__list {
+    margin-block-start: var(--space-10);
+    border-block-start: 1px solid var(--border-subtle);
+  }
+
+  .faq__item {
+    border-block-end: 1px solid var(--border-subtle);
+  }
+
+  .faq__question {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    /* 44px minimum target height with room for a two-line question on a phone. */
+    min-block-size: 44px;
+    padding-block: var(--space-5);
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    line-height: var(--lh-lg);
+    letter-spacing: var(--ls-lg);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  /* Safari draws its own triangle unless this is removed. */
+  .faq__question::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq__chevron {
+    flex: none;
+    color: var(--fg-tertiary);
+    transition: rotate var(--dur-3) var(--ease-out-quint);
+  }
+
+  .faq__item[open] .faq__chevron {
+    rotate: 180deg;
+  }
+
+  .faq__answer {
+    max-inline-size: var(--measure);
+    padding-block-end: var(--space-6);
+    color: var(--fg-secondary);
+    text-wrap: pretty;
+  }
+</style>

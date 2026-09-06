@@ -1,0 +1,26 @@
+{
+  "name": "@aibuilder/ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "description": "The Anthropic prompt architecture and call layer: frozen cached system prefix, per-step user turns, structured streaming calls, the repair ladder and the cost ledger.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aibuilder/core": "workspace:*",
+    "@aibuilder/site-schema": "workspace:*",
+    "@anthropic-ai/sdk": "0.124.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260906.1",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

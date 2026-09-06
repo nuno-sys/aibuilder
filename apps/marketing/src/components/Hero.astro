@@ -1,0 +1,439 @@
+---
+/**
+ * The full-screen bright video header — the hardest performance problem in the product.
+ *
+ * THE PROBLEM. A `<video>` is an LCP candidate, and LCP stays open until the first user
+ * interaction, so no amount of "fade the video in later" can stop it from superseding the poster.
+ * Three guards, in order of how much they actually guarantee (SEO §4.1):
+ *
+ *   1. THE SIZE INVARIANT. The poster's intrinsic area is >= the video's at every breakpoint
+ *      (2400x1350 vs 1920x1080), and the LCP algorithm only replaces a candidate with a STRICTLY
+ *      larger one. Asserted at build time in `content/hero-media.ts`.
+ *   2. `opacity: 0` until the video has a real decoded frame. Chrome excludes fully transparent
+ *      elements from LCP entirely.
+ *   3. The video mounts only after `load`, after idle, and after LCP has been attributed to the
+ *      poster (`PerformanceObserver`).
+ *
+ * And the fourth rule, which is a rule rather than a guard: NEVER put `poster=` on the `<video>`.
+ * That makes the video element itself the LCP candidate, at which point the two sizes can no longer
+ * be controlled independently.
+ *
+ * CLS. Poster and video occupy the exact same absolutely-positioned box, so mounting the video
+ * reflows nothing. Height is `100svh` — the SMALL viewport height, the value when the mobile URL
+ * bar is expanded. It never changes as the bar collapses. `100dvh` changes on scroll (shift);
+ * bare `100vh` is the LARGE viewport on iOS, so the hero overflows and the CTA hides under the
+ * browser chrome.
+ *
+ * CONTRAST. The scrim is a white wash rather than the usual dark one, because the composition is
+ * high-key and the type is ink. At the copy band the wash is 0.72 alpha white, which puts
+ * `--fg-primary` at 8.9:1 even over a pure-black video frame. See the token comment.
+ */
+import CtaButton from './CtaButton.astro';
+import {
+  heroFocalPoint,
+  landscapePoster,
+  landscapeVideo,
+  portraitPoster,
+  posterFallbackJpeg,
+} from '../content/hero-media';
+
+interface Props {
+  readonly eyebrow: string;
+  readonly headline: string;
+  readonly body: string;
+  readonly primaryCtaLabel: string;
+  readonly secondaryCtaLabel: string;
+  readonly secondaryCtaHref: string;
+  /** Short, checkable reassurances under the buttons. No statistics, no review counts. */
+  readonly reassurances: readonly string[];
+}
+
+const {
+  eyebrow,
+  headline,
+  body,
+  primaryCtaLabel,
+  secondaryCtaLabel,
+  secondaryCtaHref,
+  reassurances,
+} = Astro.props;
+---
+
+{/* The focal point is media metadata, so it arrives as a custom property on the element that
+    owns the media rather than as a design token. */}
+<section class="hero" style={`--hero-focal:${heroFocalPoint}`}>
+  <picture class="hero__media">
+    <source
+      media={portraitPoster.media}
+      type="image/avif"
+      srcset={portraitPoster.avifSrcset}
+      sizes={portraitPoster.sizes}
+    />
+    <source
+      media={portraitPoster.media}
+      type="image/webp"
+      srcset={portraitPoster.webpSrcset}
+      sizes={portraitPoster.sizes}
+    />
+    <source
+      media={landscapePoster.media}
+      type="image/avif"
+      srcset={landscapePoster.avifSrcset}
+      sizes={landscapePoster.sizes}
+    />
+    <source
+      media={landscapePoster.media}
+      type="image/webp"
+      srcset={landscapePoster.webpSrcset}
+      sizes={landscapePoster.sizes}
+    />
+    {/*
+      `alt=""`: the poster is decorative and the `<h1>` carries the meaning — an alt describing the
+      b-roll is screen-reader noise, and an empty alt does not disqualify an element from being the
+      LCP candidate. `decoding="sync"` rather than `async`, because for the single LCP element you
+      want it decoded in the frame it paints. No `loading` attribute at all: the default is `eager`,
+      and `loading="lazy"` on the LCP image is an automatic Lighthouse failure.
+    */}
+    <img
+      class="hero__poster"
+      src={posterFallbackJpeg.src}
+      alt=""
+      width={posterFallbackJpeg.intrinsic.width}
+      height={posterFallbackJpeg.intrinsic.height}
+      fetchpriority="high"
+      decoding="sync"
+    />
+  </picture>
+
+  {/*
+    No `src` and `preload="none"`: the element exists for layout stability and generates zero
+    network activity until the script attaches sources. `aria-hidden` + `tabindex="-1"` keep a
+    decorative element out of the accessibility tree and out of the tab order.
+  */}
+  <video
+    class="hero__video"
+    muted
+    loop
+    playsinline
+    disablepictureinpicture
+    {...{ disableremoteplayback: true }}
+    preload="none"
+    aria-hidden="true"
+    tabindex="-1"
+    width={landscapeVideo.intrinsic.width}
+    height={landscapeVideo.intrinsic.height}
+    data-src-av1={landscapeVideo.av1}
+    data-src-h264={landscapeVideo.h264}></video>
+
+  <div class="hero__scrim" aria-hidden="true"></div>
+
+  <div class="hero__copy container">
+    <p class="eyebrow">{eyebrow}</p>
+    <h1 class="hero__headline">{headline}</h1>
+    <p class="hero__body">{body}</p>
+    <div class="hero__actions">
+      <CtaButton size="lg">{primaryCtaLabel}</CtaButton>
+      <CtaButton size="lg" variant="secondary" href={secondaryCtaHref} onboarding={false}>
+        {secondaryCtaLabel}
+      </CtaButton>
+    </div>
+    <ul class="hero__reassurances">
+      {reassurances.map((item) => <li>{item}</li>)}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-block-size: 100vh; /* fallback for UAs without svh */
+    min-block-size: 100svh;
+    padding-block: calc(var(--nav-h) + var(--space-12)) var(--space-16);
+    overflow: clip;
+    isolation: isolate;
+    /* Painted immediately, so the first frame is a warm off-white rather than a white flash. A
+       flat colour is ignored by Chrome's low-entropy heuristic and cannot become a fake LCP. */
+    background: var(--hero-bg);
+    text-align: center;
+  }
+
+  /* Poster and video occupy the identical box: mounting the video reflows nothing. */
+  .hero__media,
+  .hero__video {
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .hero__poster {
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+    object-position: var(--hero-focal, 50% 50%);
+  }
+
+  .hero__video {
+    z-index: -1; /* above the poster, below the scrim */
+    object-fit: cover;
+    object-position: var(--hero-focal, 50% 50%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-7) var(--ease-out-quint);
+  }
+
+  .hero__video[data-ready] {
+    opacity: 1;
+  }
+
+  /* Two-part wash. The top band keeps the nav's ink glyphs legible over any frame; the main wash
+     guarantees the headline's contrast and dissolves the hero into the page below. */
+  .hero__scrim {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background:
+      linear-gradient(
+        180deg,
+        var(--hero-nav-scrim) 0%,
+        transparent calc(var(--nav-h) + 100px)
+      ),
+      linear-gradient(
+        180deg,
+        var(--hero-wash-top) 0%,
+        var(--hero-wash-mid) 62%,
+        var(--hero-wash-bottom) 100%
+      );
+  }
+
+  .hero__copy {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    justify-items: center;
+  }
+
+  .hero__headline {
+    max-inline-size: 20ch;
+  }
+
+  .hero__body {
+    max-inline-size: 52ch;
+    margin-block-start: var(--space-6);
+    color: var(--fg-secondary);
+    font-size: var(--text-lg);
+    line-height: var(--lh-lg);
+    letter-spacing: var(--ls-lg);
+    text-wrap: pretty;
+  }
+
+  .hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-3);
+    margin-block-start: var(--space-8);
+  }
+
+  .hero__reassurances {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-2) var(--space-5);
+    margin-block-start: var(--space-6);
+    padding: 0;
+    color: var(--fg-tertiary);
+    font-size: var(--text-sm);
+    line-height: var(--lh-sm);
+    list-style: none;
+  }
+
+  .hero__reassurances li::before {
+    content: '·';
+    margin-inline-end: var(--space-2);
+    color: var(--border-strong);
+  }
+
+  .hero__reassurances li:first-child::before {
+    content: none;
+  }
+
+  /* A user who asked for no motion never gets a video at all — the script removes the element, and
+     this rule covers the window before the script runs. */
+  @media (prefers-reduced-motion: reduce) {
+    .hero__video {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  /**
+   * Attaches the hero video's sources, or removes the element entirely.
+   *
+   * Gate order matters: the cheapest, most user-authoritative check runs first, and every gate that
+   * fails REMOVES the element rather than hiding it — a `<video>` left in the DOM is still an LCP
+   * candidate the moment anything paints it.
+   */
+  const video = document.querySelector<HTMLVideoElement>('.hero__video');
+  const poster = document.querySelector<HTMLImageElement>('.hero__poster');
+
+  /**
+   * The subset of the Network Information API this file uses. It is not in Safari or Firefox, so
+   * every property is optional and absence is treated as "unknown" rather than "fast".
+   */
+  interface ConnectionInfo {
+    readonly saveData?: boolean;
+    readonly effectiveType?: string;
+    readonly downlink?: number;
+  }
+
+  // `connection` and `deviceMemory` are not in the DOM lib because they are not standardised.
+  // Reading them through an unknown-typed record keeps the access honest instead of asserting a
+  // shape onto `Navigator` that the platform does not guarantee.
+  const navigatorRecord = navigator as unknown as Record<string, unknown>;
+
+  const readConnection = (): ConnectionInfo => {
+    const candidate = navigatorRecord['connection'];
+    return typeof candidate === 'object' && candidate !== null ? (candidate as ConnectionInfo) : {};
+  };
+
+  const readDeviceMemory = (): number | undefined => {
+    const value = navigatorRecord['deviceMemory'];
+    return typeof value === 'number' ? value : undefined;
+  };
+
+  if (video && poster) {
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+    // Architecture §7.18: mobile default is poster-only. This is also what makes it safe to mount
+    // on Safari and Firefox despite the Network Information API being absent there — the class of
+    // device that guard was written to protect (a phone on a metered connection) is already
+    // excluded by viewport, so "unknown connection" on a desktop is not treated as a hard block.
+    const wideEnough = matchMedia('(min-width: 768px)');
+
+    const drop = (): void => {
+      video.pause();
+      video.remove();
+    };
+
+    const allowed = (): boolean => {
+      if (reducedMotion.matches || !wideEnough.matches) {
+        return false;
+      }
+      const connection = readConnection();
+      if (connection.saveData === true) {
+        return false;
+      }
+      if (connection.effectiveType !== undefined && !/^[45]g$/.test(connection.effectiveType)) {
+        return false;
+      }
+      if (connection.downlink !== undefined && connection.downlink < 1.5) {
+        return false;
+      }
+      const memory = readDeviceMemory();
+      return memory === undefined || memory >= 4;
+    };
+
+    // Gate 3: do not mount until LCP has actually been recorded against the poster. Safari and
+    // Firefox have no LCP API, so there the flag starts true and the earlier gates carry the load.
+    let lcpRecorded = false;
+    try {
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if ((entry as { element?: Element }).element === poster) {
+            lcpRecorded = true;
+          }
+        }
+      }).observe({ type: 'largest-contentful-paint', buffered: true });
+    } catch {
+      lcpRecorded = true;
+    }
+
+    const mount = (): void => {
+      if (document.visibilityState !== 'visible' || !allowed()) {
+        return;
+      }
+      const { srcAv1, srcH264 } = video.dataset;
+      const addSource = (src: string | undefined, type: string): void => {
+        if (src === undefined) {
+          return;
+        }
+        const source = document.createElement('source');
+        source.src = src;
+        source.type = type;
+        video.appendChild(source);
+      };
+      // AV1/WebM first (Chrome, Edge, Firefox); H.264/MP4 is the Safari and legacy fallback.
+      addSource(srcAv1, 'video/webm; codecs="av01.0.05M.08"');
+      addSource(srcH264, 'video/mp4; codecs="avc1.640028"');
+      video.load();
+      void video
+        .play()
+        .then(() => {
+          // Only now, with a real decoded frame, does the element stop being transparent.
+          requestAnimationFrame(() => {
+            video.dataset['ready'] = '1';
+          });
+        })
+        .catch(() => {
+          // iOS Low Power Mode, an autoplay policy, a decode failure. The poster stays; nothing
+          // moves; no layout changes.
+          drop();
+        });
+    };
+
+    if (!allowed()) {
+      drop();
+    } else {
+      addEventListener(
+        'load',
+        () => {
+          // Bounded wait. The poster is not guaranteed to WIN the LCP race — on a narrow viewport
+          // the headline can be the larger element — so a naive "poll until lcpRecorded" would spin
+          // forever on exactly the pages where it does not matter. After ~3 s the two structural
+          // guards (the size invariant and `opacity: 0` until a real frame) are what carry the risk,
+          // and they are the ones that actually hold.
+          let attemptsLeft = 12;
+          const run = (): void => {
+            if (lcpRecorded || attemptsLeft <= 0) {
+              mount();
+              return;
+            }
+            attemptsLeft -= 1;
+            setTimeout(run, 250);
+          };
+          if ('requestIdleCallback' in window) {
+            requestIdleCallback(run, { timeout: 2500 });
+          } else {
+            setTimeout(run, 800);
+          }
+        },
+        { once: true },
+      );
+
+      // A preference or breakpoint change mid-session is honoured immediately.
+      reducedMotion.addEventListener('change', (event: MediaQueryListEvent) => {
+        if (event.matches) {
+          drop();
+        }
+      });
+
+      // Stop decoding once the hero is scrolled away: battery, and a clean main thread for INP.
+      const visibility = new IntersectionObserver(([entry]) => {
+        if (!video.isConnected) {
+          visibility.disconnect();
+          return;
+        }
+        if (entry?.isIntersecting) {
+          void video.play().catch(() => undefined);
+        } else {
+          video.pause();
+        }
+      });
+      visibility.observe(video);
+    }
+  }
+</script>

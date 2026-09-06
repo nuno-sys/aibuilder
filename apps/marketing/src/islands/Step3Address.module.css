@@ -1,0 +1,70 @@
+/* Step 3 — postcode pair, resolved card, manual fields, service-area slider. */
+
+.postcode {
+  text-transform: uppercase;
+}
+
+.looking {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  color: var(--fg-tertiary);
+}
+
+/* The resolved address is read-only prose, not a disabled field: a greyed-out input reads as
+   "broken", while a plain paragraph with an Edit link reads as "confirmed". */
+.resolved {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-block-start: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.resolvedText {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: var(--lh-md);
+  color: var(--fg-primary);
+}
+
+.manualLink {
+  margin-block-start: var(--space-3);
+  padding-inline: 0;
+}
+
+.manual {
+  display: grid;
+  gap: var(--space-5);
+  margin-block-start: var(--space-4);
+}
+
+.service {
+  display: grid;
+  gap: var(--space-5);
+  margin-block-start: var(--space-4);
+}
+
+/* 44 px thumb on touch (SC 2.5.8). The track stays 4 px; only the handle is large. */
+.radius {
+  inline-size: 100%;
+  block-size: 44px;
+  accent-color: var(--brand-600);
+  cursor: pointer;
+}
+
+.radius:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 4px;
+  border-radius: var(--radius-full);
+}
+
+.radiusValue {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-secondary);
+}

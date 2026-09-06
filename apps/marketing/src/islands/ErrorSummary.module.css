@@ -1,0 +1,78 @@
+/* The error summary. Colour is never the only signal (SC 1.4.1): the block also carries a border,
+   a tinted ground and a heading that states the count in words. */
+
+.summary {
+  margin-block-end: var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--danger-500);
+  /* Inner radius = outer − padding, never equal (UX §8.4). */
+  border-radius: var(--radius-md);
+  background: var(--danger-50);
+  color: var(--n-900);
+}
+
+.summary:focus-visible {
+  outline: 2px solid var(--danger-700);
+  outline-offset: 2px;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: var(--lh-md);
+  letter-spacing: var(--ls-md);
+  color: var(--danger-700);
+}
+
+.list {
+  margin: var(--space-2) 0 0;
+  padding-inline-start: var(--space-5);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
+
+.list > li + li {
+  margin-block-start: var(--space-1);
+}
+
+/* 44 px hit area without a 44 px line-height: the padding is on a pseudo-element so the list keeps
+   its natural leading while the target satisfies SC 2.5.8. */
+.link {
+  position: relative;
+  color: var(--danger-700);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link::after {
+  content: '';
+  position: absolute;
+  inset-block: -12px;
+  inset-inline: -4px;
+}
+
+.link:hover {
+  text-decoration-thickness: 2px;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--danger-700);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+@media (prefers-contrast: more) {
+  .summary {
+    border-width: 2px;
+    border-color: var(--n-700);
+  }
+}
+
+@media (forced-colors: active) {
+  .summary {
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+}
