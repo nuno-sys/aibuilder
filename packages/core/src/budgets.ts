@@ -360,6 +360,60 @@ export function checkPosterInvariant(
   return findings;
 }
 
+/**
+ * What a hero clip is allowed to cost, per breakpoint.
+ *
+ * Landscape gets more because it only ever loads on a wide viewport, which correlates with a
+ * connection that can afford it. The phone's ceiling is roughly a third: a background video that
+ * costs half a megabyte on a phone is the reason the technique has a bad reputation, and the whole
+ * argument for a separate portrait encode is that it does not have to.
+ *
+ * These are the ENCODED sizes the ingest measured, not estimates. A clip over budget is a clip to
+ * re-encode at a higher CRF or trim shorter — never a ceiling to raise.
+ */
+export const HERO_VIDEO_LANDSCAPE_BUDGET_BYTES = 1_400_000;
+export const HERO_VIDEO_PORTRAIT_BUDGET_BYTES = 450_000;
+
+/**
+ * The full hero-motion gate: the size invariant at both breakpoints, and the byte budget at both.
+ *
+ * WHY THIS IS ONE FUNCTION AND WHY IT IS CALLED. `checkPosterInvariant` existed and was tested for
+ * months without a single caller, because at the time nothing shipped a hero video — so the guard
+ * and the feature arrived separately and never met. It is called now, on every rendered page, and a
+ * finding here is an error rather than a warning: a hero whose video outsizes its poster fails the
+ * one metric the whole design is arranged around, and a hero over budget fails the promise the
+ * marketing site makes on the way in.
+ */
+export function checkHeroVideo(args: {
+  readonly landscapePoster: Dimensions;
+  readonly portraitPoster: Dimensions;
+  readonly landscape: Dimensions & { readonly maxBytes: number };
+  readonly portrait: Dimensions & { readonly maxBytes: number };
+}): readonly BudgetFinding[] {
+  const findings = [
+    ...checkPosterInvariant([
+      { breakpoint: '(min-width:768px)', poster: args.landscapePoster, video: args.landscape },
+      { breakpoint: '(max-width:767px)', poster: args.portraitPoster, video: args.portrait },
+    ]),
+  ];
+
+  for (const [breakpoint, video, limit] of [
+    ['(min-width:768px)', args.landscape, HERO_VIDEO_LANDSCAPE_BUDGET_BYTES],
+    ['(max-width:767px)', args.portrait, HERO_VIDEO_PORTRAIT_BUDGET_BYTES],
+  ] as const) {
+    if (video.maxBytes <= limit) continue;
+    findings.push({
+      code: 'hero_video_budget',
+      severity: 'error',
+      measured: video.maxBytes,
+      limit,
+      message: `The hero clip at ${breakpoint} is ${video.maxBytes} B against a ${limit} B ceiling; re-encode it rather than raising the ceiling.`,
+    });
+  }
+
+  return findings;
+}
+
 /* -- The tenant CSP ---------------------------------------------------------------------------- */
 
 /**

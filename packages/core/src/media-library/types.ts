@@ -92,6 +92,17 @@ export interface LibraryVideo {
   readonly portrait: LibraryVideoRendition;
   /** The poster. Always present: it is the LCP element whether or not the video ever plays. */
   readonly poster: LibraryImageRendition;
+  /**
+   * The 9:16 poster, cropped to the portrait clip's shape.
+   *
+   * Art direction is the visible reason; LCP is the load-bearing one. An image is scored at
+   * `min(visible area, intrinsic area)`, so cover-fitting the landscape ladder into a phone's
+   * viewport scores the poster at a rung far smaller than the hero is displayed, and the portrait
+   * video — clamped to the full visible area — then beats it and becomes the LCP element. Every
+   * rung of this ladder is larger than any phone hero is displayed at, so the poster is never
+   * capped and the video can at best tie, which the LCP algorithm resolves in the poster's favour.
+   */
+  readonly posterPortrait: LibraryImageRendition;
   readonly durationSeconds: number;
   /** Human description, for the editor's picker and for `alt` on the poster. */
   readonly description: string;

@@ -110,15 +110,69 @@ function resolveImage(asset: MediaAsset, cdnOrigin: string): ResolvedImage | nul
   };
 }
 
-/** The hero's media set for one page, or `null` when the page has no hero image. */
-function heroFor(page: PageDoc, images: Readonly<Record<string, ResolvedImage>>): HeroMedia | null {
+/** A srcset over a library still ladder, on the CDN origin the dashboard preview loads from. */
+function librarySrcset(template: string, widths: readonly number[], cdnOrigin: string): string {
+  return widths
+    .map((width) => {
+      const key = template.replace('{width}', String(width));
+      return `${cdnOrigin}${assetPath({ kind: 'library', key })} ${String(width)}w`;
+    })
+    .join(', ');
+}
+
+/**
+ * The hero's media set for one page, or `null` when the page has no hero image.
+ *
+ * Mirrors `apps/generator/src/steps/render.ts` field for field, and has to: the point of this
+ * module is that the editor previews the document that will publish. A preview that quietly
+ * withheld the hero video would show the owner a still header and then publish a moving one.
+ */
+function heroFor(
+  page: PageDoc,
+  images: Readonly<Record<string, ResolvedImage>>,
+  heroVideo: SiteDoc['heroVideo'],
+  cdnOrigin: string,
+): HeroMedia | null {
   for (const section of page.sections) {
     if (section.type !== 'hero' || section.media === null) continue;
     const poster = images[section.media.refId];
     if (poster === undefined) continue;
-    // No portrait crop and no video renditions: the media pipeline accepts no user video in this
-    // phase and produces one landscape ladder per upload.
-    return { poster, portraitSources: [], video: null };
+    const url = (key: string): string => `${cdnOrigin}${assetPath({ kind: 'library', key })}`;
+    return {
+      poster,
+      portraitSources:
+        heroVideo === null
+          ? []
+          : [
+              {
+                type: 'image/avif',
+                srcset: librarySrcset(
+                  heroVideo.portraitPoster.avifKeyTemplate,
+                  heroVideo.portraitPoster.widths,
+                  cdnOrigin,
+                ),
+              },
+              {
+                type: 'image/webp',
+                srcset: librarySrcset(
+                  heroVideo.portraitPoster.webpKeyTemplate,
+                  heroVideo.portraitPoster.widths,
+                  cdnOrigin,
+                ),
+              },
+            ],
+      video:
+        heroVideo === null
+          ? null
+          : {
+              desktopAv1: url(heroVideo.landscape.av1R2Key),
+              desktopH264: url(heroVideo.landscape.h264R2Key),
+              mobileAv1: url(heroVideo.portrait.av1R2Key),
+              mobileH264: url(heroVideo.portrait.h264R2Key),
+              width: heroVideo.landscape.width,
+              height: heroVideo.landscape.height,
+            },
+    };
   }
   return null;
 }
@@ -198,7 +252,8 @@ export async function renderPreview(input: PreviewRenderInput): Promise<PreviewR
     const resolved = resolveImage(asset, input.cdnOrigin);
     if (resolved !== null) images[refId] = resolved;
   }
-  const hero = heroFor(page, images);
+
+  const hero = heroFor(page, images, doc.heroVideo, input.cdnOrigin);
   const industry = assertIndustry(doc.facts.industryKey);
   const changedAt = new Date(input.updatedAt).toISOString();
 

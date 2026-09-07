@@ -190,6 +190,19 @@ export const LuminanceClassSchema = z.enum(['light', 'dark']);
 export type LuminanceClass = z.infer<typeof LuminanceClassSchema>;
 
 /** One encoded rendition of a video, by container. Both are the same footage at the same size. */
+/**
+ * A responsive still ladder: the two formats worth shipping, and the widths actually encoded.
+ *
+ * `{width}` is substituted by the renderer to build a `srcset`. A width that is not in `widths` was
+ * never encoded, so offering it would be a 404 in the one element the page is judged on.
+ */
+export const ImageLadderSchema = z.object({
+  avifKeyTemplate: z.string().min(1).max(512),
+  webpKeyTemplate: z.string().min(1).max(512),
+  widths: z.array(z.number().int().positive()).min(1).max(8),
+});
+export type ImageLadder = z.infer<typeof ImageLadderSchema>;
+
 export const VideoRenditionSchema = z.object({
   /** AV1-in-WebM. First source, so a modern browser never downloads the H.264. */
   av1R2Key: z.string().min(1).max(512),
@@ -218,6 +231,20 @@ export const HeroVideoSchema = z.object({
   luminance: LuminanceClassSchema,
   /** Required by the stock provider's terms. Rendered in the footer, never suppressed. */
   credit: z.string().max(200).nullable(),
+  /**
+   * The 9:16 poster ladder, art-directed for the viewport that gets the portrait encode.
+   *
+   * Not decoration. An image's LCP score is `min(visible area, intrinsic area)`, so cover-fitting
+   * the 16:9 poster into a phone viewport scores it at a rung smaller than the hero is displayed
+   * at, and the portrait video then beats it and becomes the LCP element — which is precisely the
+   * outcome the whole poster-first design exists to prevent. Every rung here is larger than any
+   * phone hero is displayed at, so the poster is never capped and the video can at best tie.
+   */
+  portraitPoster: ImageLadderSchema.extend({
+    /** Intrinsic size of the LARGEST rung — what the publish budget checks the video against. */
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  }),
 });
 export type HeroVideo = z.infer<typeof HeroVideoSchema>;
 
@@ -245,13 +272,7 @@ export const MediaAssetSchema = z.object({
    * substitutes `{width}` to build the `srcset`; a width that is not in `widths` was never encoded
    * and must never be offered.
    */
-  renditions: z
-    .object({
-      avifKeyTemplate: z.string().min(1).max(512),
-      webpKeyTemplate: z.string().min(1).max(512),
-      widths: z.array(z.number().int().positive()).min(1).max(8),
-    })
-    .nullable(),
+  renditions: ImageLadderSchema.nullable(),
   /**
    * Written by the media pipeline, not by the model.
    * Phase 2: alt text becomes a per-locale slot once the editor can translate it.

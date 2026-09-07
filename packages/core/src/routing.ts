@@ -474,6 +474,14 @@ export function hreflangCluster(args: {
  */
 export const ASSET_PREFIX = '/_a/';
 
+/**
+ * R2 prefix the media library is uploaded under.
+ *
+ * One writer (`scripts/media-library/upload.mjs`) and one reader (`assetR2Key`), so the prefix is
+ * stated once here rather than spelled into either of them.
+ */
+export const LIBRARY_PREFIX = 'library/';
+
 /** One addressable asset. Every field is validated before it is turned back into an R2 key. */
 export type AssetRequest =
   | {
@@ -495,13 +503,34 @@ export type AssetRequest =
    * `avif`/`webp`/`jpg` only, so per-tenant icons arrive with the editor's branding panel rather
    * than being faked from a JPEG here.
    */
-  | { readonly kind: 'brand'; readonly file: string };
+  | { readonly kind: 'brand'; readonly file: string }
+  /**
+   * One object of the pre-built media library — a hero clip's encode or a poster rung.
+   *
+   * Not content-addressed, and deliberately so. Library objects are OUR build output, uploaded once
+   * and shared by every tenant, so a digest would buy nothing and would make the catalogue churn on
+   * every re-encode. The key is a path the ingest produced (`video/<group>/<name>-<role>.av1.webm`,
+   * `poster/<group>/<name>-<width>.avif`), which is why `LIBRARY_KEY_PATTERN` is a closed shape
+   * rather than a sanity check: it is the only thing standing between a request path and an R2 key.
+   */
+  | { readonly kind: 'library'; readonly key: string };
 
 /** A font filename: the build step's own output, so a closed shape rather than a free string. */
 const FONT_FILE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}\.woff2$/u;
 
 /** A brand filename. Same reasoning as the font pattern: our own build output, closed shape. */
 const BRAND_FILE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}\.(?:png|svg|ico)$/u;
+
+/**
+ * A media-library key, as the ingest writes it.
+ *
+ * Every segment is bounded and the alphabet excludes `.` in the directory positions, so the pattern
+ * cannot match a traversal however it is spelled. The extension alternation is the encoder's own
+ * output list — `av1.webm` and `h264.mp4` for clips, `avif` and `webp` for stills — which keeps a
+ * request for an unbuilt format a 404 at the parse rather than a miss at the bucket.
+ */
+const LIBRARY_KEY_PATTERN =
+  /^(?:video|poster)\/[a-z][a-z_]{1,31}\/[a-z0-9][a-z0-9-]{0,63}\.(?:av1\.webm|h264\.mp4|avif|webp)$/u;
 
 const SHA256_HEX = /^[0-9a-f]{64}$/u;
 
@@ -510,7 +539,7 @@ const SHA256_HEX = /^[0-9a-f]{64}$/u;
  *
  * Content-addressed, therefore immutable, therefore safe to serve with a one-year `immutable`
  * cache directive. The single-letter kind segment keeps the path short — it is repeated in every
- * `srcset` on the page — while making the parse total: a path whose kind is not one of these five
+ * `srcset` on the page — while making the parse total: a path whose kind is not one of these six
  * is not an asset, and there is no fallback that tries to guess.
  */
 export function assetPath(request: AssetRequest): string {
@@ -527,6 +556,8 @@ export function assetPath(request: AssetRequest): string {
       return `${ASSET_PREFIX}f/${request.file}`;
     case 'brand':
       return `${ASSET_PREFIX}b/${request.file}`;
+    case 'library':
+      return `${ASSET_PREFIX}l/${request.key}`;
   }
 }
 
@@ -586,6 +617,10 @@ export function parseAssetPath(pathname: string): AssetRequest | null {
     return BRAND_FILE_PATTERN.test(tail) ? { kind: 'brand', file: tail } : null;
   }
 
+  if (kind === 'l') {
+    return LIBRARY_KEY_PATTERN.test(tail) ? { kind: 'library', key: tail } : null;
+  }
+
   return null;
 }
 
@@ -618,6 +653,8 @@ export function assetR2Key(request: AssetRequest): string {
       return `fonts/${request.file}`;
     case 'brand':
       return `brand/${request.file}`;
+    case 'library':
+      return `${LIBRARY_PREFIX}${request.key}`;
   }
 }
 
@@ -647,7 +684,31 @@ export function assetContentType(request: AssetRequest): string {
       return 'font/woff2';
     case 'brand':
       return BRAND_CONTENT_TYPES[extensionOf(request.file)] ?? 'application/octet-stream';
+    case 'library':
+      return LIBRARY_CONTENT_TYPES[librarySuffixOf(request.key)] ?? 'application/octet-stream';
   }
+}
+
+/**
+ * Closed MIME table for the library's four output shapes.
+ *
+ * Keyed on the compound suffix rather than the last extension, because `av1.webm` and `h264.mp4`
+ * name a codec as well as a container: the `<source type>` the renderer emits carries the codec
+ * string, and a response whose `Content-Type` disagreed with it would be the one mismatch a browser
+ * resolves by refusing to play rather than by guessing.
+ */
+const LIBRARY_CONTENT_TYPES: Readonly<Record<string, string>> = {
+  'av1.webm': 'video/webm',
+  'h264.mp4': 'video/mp4',
+  avif: 'image/avif',
+  webp: 'image/webp',
+};
+
+/** The suffix of a library key that `LIBRARY_KEY_PATTERN` has already validated. */
+function librarySuffixOf(key: string): string {
+  const file = key.slice(key.lastIndexOf('/') + 1);
+  const dot = file.indexOf('.');
+  return dot === -1 ? '' : file.slice(dot + 1);
 }
 
 /** Closed MIME table for the brand file set. */

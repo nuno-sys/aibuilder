@@ -141,14 +141,44 @@ function imagesOf(site: DemoSite): Record<string, ResolvedImage> {
 }
 
 /** The hero's art-directed set: a landscape poster, a portrait crop, and the library clip. */
+/** A srcset over a library still ladder, in the harness's `/_lib` address space. */
+function librarySrcset(template: string, widths: readonly number[]): string {
+  return widths
+    .map((width) => `${libraryUrl(template.replace('{width}', String(width)))} ${String(width)}w`)
+    .join(', ');
+}
+
 function heroOf(site: DemoSite, images: Readonly<Record<string, ResolvedImage>>): HeroMedia | null {
   const poster = images[site.heroRefId];
   if (poster === undefined) return null;
-  const portrait = images[site.heroPortraitRefId];
   const clip = selectDemoHero(site);
   return {
     poster,
-    portraitSources: portrait === undefined ? [] : [...portrait.sources],
+    /*
+      The library's own 9:16 crop, exactly as `apps/generator/src/steps/render.ts` builds it —
+      not the harness's separately generated portrait art. Serving a different portrait source
+      here than production serves would make the one thing this preview exists to check (that a
+      phone gets a poster large enough to keep the LCP entry away from the video) unverifiable.
+    */
+    portraitSources:
+      clip === null
+        ? []
+        : [
+            {
+              type: 'image/avif',
+              srcset: librarySrcset(
+                clip.posterPortrait.avifKeyTemplate,
+                clip.posterPortrait.widths,
+              ),
+            },
+            {
+              type: 'image/webp',
+              srcset: librarySrcset(
+                clip.posterPortrait.webpKeyTemplate,
+                clip.posterPortrait.widths,
+              ),
+            },
+          ],
     /*
       The clip the REAL selector chose out of the shipped library, not one the harness assigned.
       Two encodes, because a phone must never be handed the 1920x1080 file: the portrait rendition

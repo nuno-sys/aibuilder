@@ -23,7 +23,10 @@ scripts/media-library/sources/<group>/<name>.mp4     the clip
 scripts/media-library/sources/<group>/<name>.json    { "description": "...", "credit": "..." }
 ```
 
-`<group>` is one of the fourteen industry groups. `luminance` and `hue` are **not** read from the
+`<group>` is one of the fourteen industry groups, or `brand` — the marketing site's own header,
+which goes through the identical encoder so the sales page ships the same bytes the product does.
+
+`luminance` and `hue` are **not** read from the
 sidecar — they are measured off the pixels, because they are the two properties a human judges worst
 and the renderer depends on most. Get luminance wrong and the copy is unreadable.
 
@@ -32,7 +35,15 @@ Then:
 ```bash
 pnpm media:ingest       # transcode + measure + write .media-library/media-library.json
 pnpm media:catalogue    # project that into packages/core/src/media-library/catalogue.generated.ts
+pnpm media:marketing    # stage the `brand` clip into apps/marketing/public/media/hero/
+pnpm media:upload       # put the binaries in R2 under library/<key>
 ```
+
+`media:upload` refuses to overwrite a key that already exists. Library keys are not
+content-addressed yet are served `immutable` for a year, so that promise is only honest while a
+key's bytes never change: adding footage is free because new footage gets new names, and replacing
+what a published key holds takes `--force` and a deliberate decision about the caches still holding
+the old object. `--dry-run` lists what would be written.
 
 `ingest` is incremental: anything already encoded is skipped unless you pass `--force`.
 `--synthesize` writes abstract stand-in clips first, so the whole path can be exercised without
@@ -40,10 +51,12 @@ licensed footage.
 
 ## What ships where
 
-|                                                          |                                                                              |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `packages/core/src/media-library/catalogue.generated.ts` | the index — committed, bundled into the Workers                              |
-| `.media-library/out/**`                                  | the binaries — git-ignored, uploaded to R2 under exactly the manifest's keys |
+|                                                          |                                                                           |
+| -------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `packages/core/src/media-library/catalogue.generated.ts` | the index — committed, bundled into the Workers                           |
+| `.media-library/out/**`                                  | the binaries — git-ignored, uploaded to R2 under `library/<key>`          |
+| `apps/marketing/public/media/hero/**`                    | the `brand` clip's renditions — committed, so the sales page builds in CI |
+| `apps/marketing/src/content/hero-media.generated.ts`     | their URLs, sizes and measured byte cost — committed                      |
 
 Only the index travels in the bundle. It is a few dozen kilobytes of data that changes when someone
 deliberately adds footage, which makes a KV read pure cost: a round trip and an error branch bought
@@ -61,6 +74,21 @@ Per clip: AV1 + H.264, landscape 1920×1080 and portrait 720×1280. The portrait
 reason background video can be affordable on a phone: roughly a quarter of the bytes, and it fills
 the viewport instead of being letterboxed into it.
 
-Per still: AVIF + WebP at 640 / 960 / 1280 / 1920 / 2560. AVIF first because it is ~30% smaller at
+Per still, two ladders. Landscape: AVIF + WebP at 640 / 960 / 1280 / 1920 / 2560. Portrait, cropped
+9:16 to match the portrait clip: 540 / 720 / 1080 / 1440. AVIF first because it is ~30% smaller at
 the same quality; WebP always built because AVIF is not universal. No JPEG rung — the `<img>` src
 points at the largest WebP, which every browser reaching this markup can decode.
+
+The portrait ladder is not art direction for its own sake. LCP scores an image at
+`min(visible area, intrinsic area)`, so cover-fitting a 16:9 still into a 9:16 viewport picks a rung
+_smaller_ than the hero is displayed at — the poster is scored down, the portrait video is scored at
+the full box, and the video takes the LCP entry away from it. Every rung here is larger than any
+phone hero is displayed at, so the poster is never capped and the video can at best tie. A tie keeps
+the poster: the algorithm only replaces a candidate with a strictly larger one.
+
+## Serving
+
+The catalogue names R2 keys; a tenant page addresses them as `/_a/l/<key>` on its own origin, parsed
+back by `parseAssetPath` against a closed grammar and mapped to `library/<key>` in the media bucket.
+Same-origin, so `img-src 'self'` in the tenant CSP stays true and no third origin appears on the LCP
+path.

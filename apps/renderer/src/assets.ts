@@ -33,8 +33,12 @@ export async function serveAsset(args: {
 
   const headers = new Headers({
     'content-type': assetContentType(request),
-    // Content-addressed, therefore immutable, therefore safe for a year. A re-upload of different
-    // bytes is a different digest and therefore a different URL.
+    // Immutable, therefore safe for a year — by two different mechanisms. Tenant derivatives are
+    // content-addressed, so a re-upload of different bytes is a different digest and a different
+    // URL. Our own build output (fonts, brand files, the media library) is not: those keys are
+    // names, and the promise holds because the writers refuse to overwrite one — `media:upload`
+    // skips a key that already exists, and replacing what a published key holds is a deliberate
+    // `--force` with the caches in mind. Adding footage is free: new footage gets new names.
     'cache-control': ASSET_CACHE_CONTROL,
     etag: object.httpEtag,
     'x-content-type-options': 'nosniff',

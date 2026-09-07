@@ -175,6 +175,27 @@ describe('the document', () => {
     expect(jsonLd).toBeGreaterThan(title);
   });
 
+  it('preloads the candidate the picture will actually resolve, not a fixed URL', async () => {
+    const { html } = await render();
+    const preloads = [...html.matchAll(/<link rel="preload" as="image"[^>]*>/gu)].map((m) => m[0]);
+    expect(preloads.length).toBe(2);
+
+    // The srcset on each preload has to be the SAME string the `<picture>` carries. A preload
+    // naming one fixed URL resolves to a different file from the one that paints on most devices:
+    // the page pays for both, and the image that becomes the LCP element was never preloaded.
+    const sources = [...html.matchAll(/<source[^>]*srcset="([^"]*)"[^>]*>/gu)].map((m) => m[1]);
+    for (const preload of preloads) {
+      const srcset = /imagesrcset="([^"]*)"/u.exec(preload)?.[1];
+      expect(srcset, preload).toBeDefined();
+      expect(sources, preload).toContain(srcset);
+      // Without `imagesizes` the browser cannot pick a candidate and falls back to the widest.
+      expect(preload).toContain('imagesizes="100vw"');
+      expect(preload).toMatch(/media="\(m(in|ax)-width:7\d\dpx\)"/u);
+      // `href` alongside `imagesrcset` is the ignored fallback; naming one reintroduces the bug.
+      expect(preload).not.toContain('href=');
+    }
+  });
+
   it('never disables pinch zoom', async () => {
     const { html } = await render();
     expect(html).toContain('viewport-fit=cover');

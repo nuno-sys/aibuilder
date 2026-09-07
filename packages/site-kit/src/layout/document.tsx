@@ -32,10 +32,20 @@ export interface HeadInputs {
   readonly jsonLd: string;
   /** `href` of the single preloaded font face. */
   readonly fontPreload: string;
-  /** Art-directed hero preloads: at most one fetches, because they carry `media`. */
+  /**
+   * Art-directed hero preloads: at most one fetches, because they carry `media`.
+   *
+   * `imagesrcset` + `imagesizes` rather than a single `href`, and that is not a detail. The
+   * `<picture>` resolves a candidate from the full srcset against the device's width and DPR; a
+   * preload naming one fixed URL therefore downloads a DIFFERENT file from the one that paints —
+   * the page pays for both, and the image that actually becomes the LCP element was never
+   * preloaded. The descriptors here mirror the `<picture>` exactly, so the preload scanner and the
+   * renderer resolve to the same object.
+   */
   readonly heroPreloads: readonly {
     readonly media: string;
-    readonly href: string;
+    readonly imagesrcset: string;
+    readonly imagesizes: string;
     readonly type: string;
   }[];
 }
@@ -57,11 +67,14 @@ export function renderHead(inputs: HeadInputs): string {
     '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
   ];
 
-  // 1. LCP candidates. Art-directed, so exactly one image is fetched.
+  // 1. LCP candidates. Art-directed, so exactly one image is fetched. No `href`: with
+  // `imagesrcset` present it is the ignored fallback for UAs that support neither, and naming one
+  // there would reintroduce the fixed-URL mismatch this shape exists to avoid.
   for (const preload of inputs.heroPreloads) {
     parts.push(
       `<link rel="preload" as="image" fetchpriority="high" media="${escapeAttr(preload.media)}"` +
-        ` href="${escapeAttr(preload.href)}" type="${escapeAttr(preload.type)}">`,
+        ` imagesrcset="${escapeAttr(preload.imagesrcset)}"` +
+        ` imagesizes="${escapeAttr(preload.imagesizes)}" type="${escapeAttr(preload.type)}">`,
     );
   }
   // `crossorigin` is mandatory even same-origin: fonts are CORS-fetched, and omitting it causes a

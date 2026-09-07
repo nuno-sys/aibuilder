@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CACHE_ORIGIN,
+  LIBRARY_PREFIX,
   assetContentType,
   assetPath,
   assetR2Key,
@@ -296,6 +297,9 @@ describe('asset routing', () => {
       { kind: 'video', sha256: SHA, format: 'mp4' },
       { kind: 'original', sha256: SHA },
       { kind: 'font', file: 'inter-latin.9a13c4.woff2' },
+      { kind: 'brand', file: 'icon-32.png' },
+      { kind: 'library', key: 'video/food_drink/light-1-landscape.av1.webm' },
+      { kind: 'library', key: 'poster/real_estate/dark-2-p-1080.avif' },
     ] as const) {
       expect(parseAssetPath(assetPath(request))).toEqual(request);
     }
@@ -321,6 +325,15 @@ describe('asset routing', () => {
       '/_a/f/../../secret',
       '/_a/f/evil.html',
       `/_a/o/${SHA}/../../other`,
+      // The library grammar is closed the same way: a directory it does not name, a traversal
+      // however it is spelled, an unbuilt format, and a bare directory are all not assets.
+      '/_a/l/secrets/food_drink/x.webp',
+      '/_a/l/video/../../etc/passwd',
+      '/_a/l/video/food_drink/../../../secret.webp',
+      '/_a/l/video/food_drink/clip.mkv',
+      '/_a/l/video/food_drink/clip.av1.webm.exe',
+      '/_a/l/poster/food_drink/',
+      '/_a/l/poster/Food_Drink/x-640.avif',
       '/nl/',
     ]) {
       expect(parseAssetPath(path), path).toBeNull();
@@ -333,6 +346,11 @@ describe('asset routing', () => {
     );
     expect(assetR2Key({ kind: 'poster', sha256: SHA, format: 'avif' })).toBe(`poster/${SHA}.avif`);
     expect(assetR2Key({ kind: 'font', file: 'inter.woff2' })).toBe('fonts/inter.woff2');
+    // Library objects are OUR build output under a single prefix, not content-addressed tenant
+    // media: the key is the ingest's own path and the prefix is stated once, in `LIBRARY_PREFIX`.
+    expect(assetR2Key({ kind: 'library', key: 'video/pets/dark-1-portrait.h264.mp4' })).toBe(
+      `${LIBRARY_PREFIX}video/pets/dark-1-portrait.h264.mp4`,
+    );
   });
 
   it('forces a Content-Type from a closed table, never from the request', () => {
@@ -342,5 +360,19 @@ describe('asset routing', () => {
     expect(assetContentType({ kind: 'video', sha256: SHA, format: 'webm' })).toBe('video/webm');
     expect(assetContentType({ kind: 'original', sha256: SHA })).toBe('application/octet-stream');
     expect(assetContentType({ kind: 'font', file: 'a.woff2' })).toBe('font/woff2');
+    // Keyed on the COMPOUND suffix: `av1.webm` and `h264.mp4` name a codec as well as a container,
+    // and a browser resolves a Content-Type that disagrees with the `<source type>` by refusing.
+    expect(
+      assetContentType({ kind: 'library', key: 'video/sport/light-1-landscape.av1.webm' }),
+    ).toBe('video/webm');
+    expect(
+      assetContentType({ kind: 'library', key: 'video/sport/light-1-portrait.h264.mp4' }),
+    ).toBe('video/mp4');
+    expect(assetContentType({ kind: 'library', key: 'poster/sport/light-1-p-720.avif' })).toBe(
+      'image/avif',
+    );
+    expect(assetContentType({ kind: 'library', key: 'poster/sport/light-1-2560.webp' })).toBe(
+      'image/webp',
+    );
   });
 });

@@ -36,6 +36,13 @@ function video(
       width: 1920,
       height: 1080,
     },
+    posterPortrait: {
+      avifKeyTemplate: `${id}-p-{width}.avif`,
+      webpKeyTemplate: `${id}-p-{width}.webp`,
+      widths: [720, 1080],
+      width: 1080,
+      height: 1920,
+    },
     durationSeconds: 8,
     description: id,
     credit: null,

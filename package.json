@@ -29,7 +29,9 @@
     "preview": "node scripts/preview/run.mjs all",
     "preview:serve": "node scripts/preview/run.mjs serve",
     "media:ingest": "node scripts/media-library/ingest.mjs",
-    "media:catalogue": "node scripts/media-library/emit-catalogue.mjs"
+    "media:catalogue": "node scripts/media-library/emit-catalogue.mjs",
+    "media:marketing": "node scripts/media-library/stage-marketing.mjs",
+    "media:upload": "node scripts/media-library/upload.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",

@@ -5,6 +5,7 @@ import {
   assetPath,
   buildTenantCsp,
   checkDocumentBudgets,
+  checkHeroVideo,
   encodePageMetadata,
   formatHoursForLocale,
   hasBlockingBudgetFindings,
@@ -179,19 +180,79 @@ function resolveImage(asset: MediaAsset): ResolvedImage | null {
   };
 }
 
-/** The hero's media set for one page, or `null` when the page has no hero image. */
-function heroFor(page: PageDoc, images: Readonly<Record<string, ResolvedImage>>): HeroMedia | null {
+/**
+ * The srcset for one library still ladder, as same-origin `/_a/l/…` paths.
+ *
+ * The ladder's `widths` are the widths that were actually encoded, so a candidate offered here is
+ * always a real object. Substituting `{width}` is the whole contract the catalogue states.
+ */
+function librarySrcset(template: string, widths: readonly number[]): string {
+  return widths
+    .map((width) => {
+      const key = template.replace('{width}', String(width));
+      return `${assetPath({ kind: 'library', key })} ${String(width)}w`;
+    })
+    .join(', ');
+}
+
+/**
+ * The hero's media set for one page, or `null` when the page has no hero image.
+ *
+ * THE VIDEO IS SITE-LEVEL, THE POSTER IS PAGE-LEVEL. `doc.heroVideo` is chosen once per site by
+ * the media step — one clip, matched to the theme's luminance and accent — because a site whose
+ * every page opens on a different film reads as a template rather than as a business. The poster
+ * stays per-page: it is the section's own image, and it is the LCP element on every page whether
+ * or not the video is ever allowed to mount.
+ *
+ * THE PORTRAIT SOURCES ARE NOT DECORATION. Without them a phone gets the 16:9 poster cover-fitted
+ * into a 9:16 viewport, which LCP scores at the poster's intrinsic size — smaller than the hero is
+ * displayed at, and therefore smaller than the portrait video clamped to the same box. The video
+ * would become the LCP element and the §7.17 size invariant would be violated on exactly the
+ * device class that can least afford it.
+ */
+export function heroFor(
+  page: PageDoc,
+  images: Readonly<Record<string, ResolvedImage>>,
+  heroVideo: SiteDoc['heroVideo'],
+): HeroMedia | null {
   for (const section of page.sections) {
     if (section.type !== 'hero' || section.media === null) continue;
     const poster = images[section.media.refId];
     if (poster === undefined) continue;
     return {
       poster,
-      // No portrait crop and no video renditions in this phase: the media pipeline accepts no user
-      // video at all (§0) and produces one landscape ladder per upload. The §7.17 poster/video size
-      // invariant is therefore vacuously satisfied — there is no video to lose to.
-      portraitSources: [],
-      video: null,
+      portraitSources:
+        heroVideo === null
+          ? []
+          : [
+              {
+                type: 'image/avif',
+                srcset: librarySrcset(
+                  heroVideo.portraitPoster.avifKeyTemplate,
+                  heroVideo.portraitPoster.widths,
+                ),
+              },
+              {
+                type: 'image/webp',
+                srcset: librarySrcset(
+                  heroVideo.portraitPoster.webpKeyTemplate,
+                  heroVideo.portraitPoster.widths,
+                ),
+              },
+            ],
+      video:
+        heroVideo === null
+          ? null
+          : {
+              desktopAv1: assetPath({ kind: 'library', key: heroVideo.landscape.av1R2Key }),
+              desktopH264: assetPath({ kind: 'library', key: heroVideo.landscape.h264R2Key }),
+              mobileAv1: assetPath({ kind: 'library', key: heroVideo.portrait.av1R2Key }),
+              mobileH264: assetPath({ kind: 'library', key: heroVideo.portrait.h264R2Key }),
+              // The LANDSCAPE size, because it is the larger of the two and the `width`/`height`
+              // attributes only have to establish an aspect-ratio box before either file loads.
+              width: heroVideo.landscape.width,
+              height: heroVideo.landscape.height,
+            },
     };
   }
   return null;
@@ -310,7 +371,7 @@ export async function runRenderStep(
       // document here, and the hreflang cluster will not claim otherwise.
       if (routing === undefined) continue;
 
-      const hero = heroFor(page, images);
+      const hero = heroFor(page, images, doc.heroVideo);
       const context: RenderContext = {
         origin: `https://${site.canonical_host}`,
         assetBase: FONT_ASSET_BASE,
@@ -360,11 +421,27 @@ export async function runRenderStep(
       cssBytes = Math.max(cssBytes, pageCssBytes);
       jsBytes = Math.max(jsBytes, pageJsBytes);
 
-      const findings = checkDocumentBudgets({
-        analysis,
-        sizes: { cssGzipBytes: pageCssBytes, jsGzipBytes: pageJsBytes },
-        sameOriginHosts: [site.canonical_host],
-      });
+      const findings = [
+        ...checkDocumentBudgets({
+          analysis,
+          sizes: { cssGzipBytes: pageCssBytes, jsGzipBytes: pageJsBytes },
+          sameOriginHosts: [site.canonical_host],
+        }),
+        // §7.17, enforced rather than merely documented. The poster has to be the larger element
+        // at BOTH breakpoints or the video takes the LCP entry, and the clip has to be within the
+        // byte budget the sales page promises. Only when this page actually has both.
+        ...(hero?.video == null || doc.heroVideo === null
+          ? []
+          : checkHeroVideo({
+              landscapePoster: { width: hero.poster.width, height: hero.poster.height },
+              portraitPoster: {
+                width: doc.heroVideo.portraitPoster.width,
+                height: doc.heroVideo.portraitPoster.height,
+              },
+              landscape: doc.heroVideo.landscape,
+              portrait: doc.heroVideo.portrait,
+            })),
+      ];
       if (hasBlockingBudgetFindings(findings)) {
         throw new DocumentInvalidError(
           findings.map((finding) => `${finding.code}@${routing.path}: ${finding.message}`),

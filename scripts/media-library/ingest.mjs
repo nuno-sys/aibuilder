@@ -57,6 +57,17 @@ const GROUPS = [
 ];
 
 /**
+ * The marketing site's own header, ingested through exactly the same pipeline as tenant footage.
+ *
+ * It is NOT one of the fourteen industry groups: it never enters a selection pool, and the coverage
+ * gate does not ask it to be dressed in both luminances. It is here because a header the customer
+ * sees on the sales page and a header the customer gets on their own site must be produced by one
+ * encoder with one set of budgets — the moment the marketing hero is encoded by hand it drifts, and
+ * the promise the sales page makes about speed stops being a promise the product keeps.
+ */
+const BRAND = 'brand';
+
+/**
  * Poster widths.
  *
  * Chosen against real device widths rather than round numbers: 640 covers a 1x phone, 960 a 2x
@@ -65,6 +76,25 @@ const GROUPS = [
  * an encode on every clip.
  */
 const POSTER_WIDTHS = [640, 960, 1280, 1920, 2560];
+
+/**
+ * Portrait poster widths, and why the phone gets its own still at all.
+ *
+ * LCP compares a candidate's VISIBLE area capped by its INTRINSIC area, so an image displayed
+ * larger than it was encoded is scored at its intrinsic size. Cover-fitting a 16:9 still into a
+ * 9:16 viewport is exactly that case: at 390x844 CSS px the landscape ladder's 640-wide rung is
+ * 640x360 = 0.23 Mpx against 0.33 Mpx of visible hero, so the poster scores 0.23 and the portrait
+ * VIDEO — clamped to the same 0.33 — scores strictly higher and steals the LCP entry. Every rung
+ * here is at least 540x960 = 0.52 Mpx, which is larger than any phone hero is displayed at, so the
+ * poster is never capped and the video can at best tie. A tie keeps the poster: the LCP algorithm
+ * only replaces a candidate with a strictly larger one.
+ *
+ * 540 covers a 1x phone, 720 a small 2x, 1080 a 3x flagship, 1440 a tablet in portrait.
+ */
+const PORTRAIT_POSTER_WIDTHS = [540, 720, 1080, 1440];
+
+/** The portrait poster's shape, identical to the portrait video's so the two crop the same way. */
+const PORTRAIT_ASPECT = 9 / 16;
 
 const VIDEO_TARGETS = [
   { role: 'landscape', width: 1920, height: 1080, av1Crf: 38, h264Crf: 27 },
@@ -221,18 +251,26 @@ function encodeVideo(input, group, name) {
  * and is not universal, so the `<picture>` needs the WebP row to fall back to. No JPEG rung — the
  * `<img>` src points at the largest WebP, which every browser that reaches this markup can decode.
  */
-function encodeStill(input, kind, group, name) {
+function encodeStill(input, kind, group, name, shape = {}) {
+  const { suffix = '', widths: ladder = POSTER_WIDTHS, aspect = null } = shape;
   const dir = path.join(OUT, kind, group);
   mkdirSync(dir, { recursive: true });
-  const probe = ff(
-    ['-i', input, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
-    true,
-  );
-  void probe;
+  const source = pngSize(input);
+  const stem = `${name}${suffix}`;
+  const heightAt = (width) =>
+    aspect === null ? scaledHeight(width, source) : 2 * Math.round(width / aspect / 2);
+  // A fixed aspect crops rather than squashes, with the same `increase`-then-crop pass the video
+  // encoder uses, so the still and the clip frame the subject identically.
+  const filterAt = (width) =>
+    aspect === null
+      ? `scale=${width}:-2:flags=lanczos`
+      : `scale=${width}:${heightAt(width)}:force_original_aspect_ratio=increase:flags=lanczos,` +
+        `crop=${width}:${heightAt(width)}`;
+
   const widths = [];
-  for (const width of POSTER_WIDTHS) {
-    const avif = path.join(OUT, `${kind}/${group}/${name}-${width}.avif`);
-    const webp = path.join(OUT, `${kind}/${group}/${name}-${width}.webp`);
+  for (const width of ladder) {
+    const avif = path.join(OUT, `${kind}/${group}/${stem}-${width}.avif`);
+    const webp = path.join(OUT, `${kind}/${group}/${stem}-${width}.webp`);
     if (!fresh(avif)) {
       ff([
         '-i',
@@ -240,7 +278,7 @@ function encodeStill(input, kind, group, name) {
         '-frames:v',
         '1',
         '-vf',
-        `scale=${width}:-2:flags=lanczos`,
+        filterAt(width),
         '-c:v',
         'libaom-av1',
         '-crf',
@@ -259,7 +297,7 @@ function encodeStill(input, kind, group, name) {
         '-frames:v',
         '1',
         '-vf',
-        `scale=${width}:-2:flags=lanczos`,
+        filterAt(width),
         '-c:v',
         'libwebp',
         '-quality',
@@ -271,16 +309,37 @@ function encodeStill(input, kind, group, name) {
     }
     widths.push(width);
   }
-  const largest = path.join(OUT, `${kind}/${group}/${name}-${POSTER_WIDTHS.at(-1)}.webp`);
-  const dims = ff(['-i', largest, '-f', 'null', '-'], true);
-  void dims;
+  const width = ladder.at(-1);
   return {
-    avifKeyTemplate: `${kind}/${group}/${name}-{width}.avif`,
-    webpKeyTemplate: `${kind}/${group}/${name}-{width}.webp`,
+    avifKeyTemplate: `${kind}/${group}/${stem}-{width}.avif`,
+    webpKeyTemplate: `${kind}/${group}/${stem}-{width}.webp`,
     widths,
-    width: POSTER_WIDTHS.at(-1),
-    height: Math.round((POSTER_WIDTHS.at(-1) * 9) / 16),
+    width,
+    height: heightAt(width),
   };
+}
+
+/**
+ * Reads a PNG's intrinsic size straight out of its IHDR chunk.
+ *
+ * The declared poster height is what the `<img>` carries as its `height` attribute, so guessing it
+ * from a hard-coded 16:9 is a content-layout-shift waiting for the first clip that is not 16:9.
+ * The frame is always a PNG this script wrote one line earlier, so the header is enough — no
+ * second ffmpeg invocation, no stderr scraping.
+ *
+ * @throws Error when the file is not a PNG.
+ */
+function pngSize(file) {
+  const head = readFileSync(file).subarray(0, 24);
+  if (head.length < 24 || head.readUInt32BE(0) !== 0x89504e47) {
+    throw new Error(`not a PNG: ${file}`);
+  }
+  return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) };
+}
+
+/** The height ffmpeg's `scale=<width>:-2` produces: the source ratio, rounded to an even line. */
+function scaledHeight(width, source) {
+  return 2 * Math.round((width * source.height) / source.width / 2);
 }
 
 /** Extracts the poster frame a clip's still ladder is built from. */
@@ -306,59 +365,92 @@ function posterFrameOf(input, group, name) {
  * selection, render — can be exercised end to end. Replace them by dropping real files into
  * `sources/` and re-running; nothing else changes.
  */
+/**
+ * Palettes for the stand-ins, chosen so the MEASUREMENT cannot disagree with the label.
+ *
+ * `gradients` animates, and the frame the luminance is measured from is one second in, so a palette
+ * whose darkest stop straddles the 0.32 boundary lands on either side depending on where the
+ * animation happens to be — which is exactly what happened to the first pass: four groups measured
+ * only one light clip out of two and the coverage gate failed. Every stop of a light palette is now
+ * above the boundary and every stop of a dark one below it, so the class is a property of the
+ * palette rather than of the frame.
+ */
 const SYNTH = {
   dark: [
     ['0x101014', '0x1d2233', '0x4d6ea8'],
     ['0x14100f', '0x2a1c19', '0xa8603d'],
   ],
   light: [
-    ['0xf4f6fa', '0xdfe6f0', '0x6f8fb8'],
-    ['0xfaf6ef', '0xecdcc8', '0xc08a52'],
+    ['0xf7f9fc', '0xe6edf7', '0xb9cde6'],
+    ['0xfdfaf5', '0xf2e6d6', '0xe0c39a'],
   ],
 };
 
+/** A stable seed per clip, so `--force` re-encodes the same footage instead of new footage. */
+function seedOf(name) {
+  let hash = 2166136261;
+  for (const character of name) {
+    hash = Math.imul(hash ^ character.charCodeAt(0), 16777619) >>> 0;
+  }
+  return hash;
+}
+
+function writeSidecar(dir, name, description) {
+  const sidecar = path.join(dir, `${name}.json`);
+  if (!existsSync(sidecar)) {
+    writeFileSync(
+      sidecar,
+      JSON.stringify({ description, credit: null, placeholder: true }, null, 2) + '\n',
+    );
+  }
+}
+
+function synthesizeClip(dir, name, stops, type) {
+  const file = path.join(dir, `${name}.mp4`);
+  if (fresh(file)) {
+    return 0;
+  }
+  const colours = stops.map((hex, i) => `c${i}=${hex}`).join(':');
+  ff([
+    '-f',
+    'lavfi',
+    '-i',
+    `gradients=s=1920x1080:${colours}:nb_colors=${stops.length}:type=${type}:` +
+      `seed=${seedOf(`${path.basename(dir)}/${name}`)}:speed=0.015:r=${FPS}:d=${DURATION},format=yuv420p`,
+    '-an',
+    '-c:v',
+    'libx264',
+    '-crf',
+    '20',
+    '-preset',
+    'veryfast',
+    file,
+  ]);
+  return 1;
+}
+
 function synthesize() {
   let made = 0;
+
+  // The marketing hero: high-key, because the sales page sets ink type and a white wash over it.
+  // One clip, because the sales page has one header.
+  const brandDir = path.join(SOURCES, BRAND);
+  mkdirSync(brandDir, { recursive: true });
+  made += synthesizeClip(brandDir, 'header', ['0xfbfaf7', '0xe8eef7', '0x8fa9cc'], 'radial');
+  writeSidecar(brandDir, 'header', 'Plaatshouder — lichte merkachtergrond voor de marketingsite');
+
   for (const group of GROUPS) {
     const dir = path.join(SOURCES, group);
     mkdirSync(dir, { recursive: true });
     for (const [luminance, palettes] of Object.entries(SYNTH)) {
       palettes.forEach((stops, index) => {
         const name = `${luminance}-${index + 1}`;
-        const file = path.join(dir, `${name}.mp4`);
-        if (!fresh(file)) {
-          const colours = stops.map((hex, i) => `c${i}=${hex}`).join(':');
-          ff([
-            '-f',
-            'lavfi',
-            '-i',
-            `gradients=s=1920x1080:${colours}:nb_colors=${stops.length}:type=${index === 0 ? 'radial' : 'linear'}:speed=0.015:r=${FPS}:d=${DURATION},format=yuv420p`,
-            '-an',
-            '-c:v',
-            'libx264',
-            '-crf',
-            '20',
-            '-preset',
-            'veryfast',
-            file,
-          ]);
-          made += 1;
-        }
-        const sidecar = path.join(dir, `${name}.json`);
-        if (!existsSync(sidecar)) {
-          writeFileSync(
-            sidecar,
-            JSON.stringify(
-              {
-                description: `Plaatshouder — abstracte ${luminance === 'dark' ? 'donkere' : 'lichte'} achtergrond voor ${group}`,
-                credit: null,
-                placeholder: true,
-              },
-              null,
-              2,
-            ) + '\n',
-          );
-        }
+        made += synthesizeClip(dir, name, stops, index === 0 ? 'radial' : 'linear');
+        writeSidecar(
+          dir,
+          name,
+          `Plaatshouder — abstracte ${luminance === 'dark' ? 'donkere' : 'lichte'} achtergrond voor ${group}`,
+        );
       });
     }
   }
@@ -367,67 +459,93 @@ function synthesize() {
 
 /* ── Ingest ───────────────────────────────────────────────────────────────── */
 
+/** Ingests one source clip into every rendition, measurement and manifest row it needs. */
+function ingestClip(group, file) {
+  const name = file.replace(/\.[^.]+$/, '');
+  const dir = path.join(SOURCES, group);
+  const input = path.join(dir, file);
+  const sidecarPath = path.join(dir, `${name}.json`);
+  const sidecar = existsSync(sidecarPath) ? JSON.parse(readFileSync(sidecarPath, 'utf8')) : {};
+
+  const frame = posterFrameOf(input, group, name);
+  const measured = measure(averageColour(frame));
+  const renditions = encodeVideo(input, group, name);
+  const poster = encodeStill(frame, 'poster', group, name);
+  const posterPortrait = encodeStill(frame, 'poster', group, name, {
+    suffix: '-p',
+    widths: PORTRAIT_POSTER_WIDTHS,
+    aspect: PORTRAIT_ASPECT,
+  });
+
+  const video = {
+    id: `${group}/${name}`,
+    group,
+    luminance: measured.luminance,
+    hue: measured.hue,
+    landscape: renditions.landscape,
+    portrait: renditions.portrait,
+    poster,
+    posterPortrait,
+    durationSeconds: DURATION,
+    description: sidecar.description ?? `${group} achtergrond`,
+    credit: sidecar.credit ?? null,
+  };
+  console.log(
+    `  ${group}/${name}`.padEnd(34),
+    measured.luminance.padEnd(6),
+    `hue ${measured.hue === null ? '—' : String(measured.hue).padStart(3)}`,
+    `${String(Math.round(renditions.landscape.maxBytes / 1024)).padStart(5)} kB / ${String(Math.round(renditions.portrait.maxBytes / 1024)).padStart(4)} kB`,
+  );
+
+  // Every clip's own poster doubles as a section ground: it is already relevant, already
+  // measured, and already encoded. A ground pool that needs its own sourcing run is a pool
+  // that stays empty.
+  const image = {
+    id: `${group}/${name}-ground`,
+    group,
+    luminance: measured.luminance,
+    hue: measured.hue,
+    role: 'ground',
+    orientation: 'landscape',
+    rendition: poster,
+    description: sidecar.description ?? `${group} achtergrond`,
+    credit: sidecar.credit ?? null,
+  };
+  return { video, image };
+}
+
+function clipsIn(group) {
+  const dir = path.join(SOURCES, group);
+  if (!existsSync(dir)) {
+    return [];
+  }
+  return readdirSync(dir)
+    .filter((f) => /\.(mp4|mov|webm)$/i.test(f))
+    .sort()
+    .map((file) => ingestClip(group, file));
+}
+
 function ingest() {
   const videos = [];
   const images = [];
+  const brand = [];
   if (!existsSync(SOURCES)) {
     console.log(
       `no sources at ${path.relative(ROOT, SOURCES)} — run with --synthesize to generate stand-ins`,
     );
-    return { videos, images };
+    return { videos, images, brand };
   }
 
   for (const group of readdirSync(SOURCES).filter((d) => GROUPS.includes(d))) {
-    const dir = path.join(SOURCES, group);
-    for (const file of readdirSync(dir)
-      .filter((f) => /\.(mp4|mov|webm)$/i.test(f))
-      .sort()) {
-      const name = file.replace(/\.[^.]+$/, '');
-      const input = path.join(dir, file);
-      const sidecarPath = path.join(dir, `${name}.json`);
-      const sidecar = existsSync(sidecarPath) ? JSON.parse(readFileSync(sidecarPath, 'utf8')) : {};
-
-      const frame = posterFrameOf(input, group, name);
-      const measured = measure(averageColour(frame));
-      const renditions = encodeVideo(input, group, name);
-      const poster = encodeStill(frame, 'poster', group, name);
-
-      videos.push({
-        id: `${group}/${name}`,
-        group,
-        luminance: measured.luminance,
-        hue: measured.hue,
-        landscape: renditions.landscape,
-        portrait: renditions.portrait,
-        poster,
-        durationSeconds: DURATION,
-        description: sidecar.description ?? `${group} achtergrond`,
-        credit: sidecar.credit ?? null,
-      });
-      console.log(
-        `  ${group}/${name}`.padEnd(34),
-        measured.luminance.padEnd(6),
-        `hue ${measured.hue === null ? '—' : String(measured.hue).padStart(3)}`,
-        `${String(Math.round(renditions.landscape.maxBytes / 1024)).padStart(5)} kB / ${String(Math.round(renditions.portrait.maxBytes / 1024)).padStart(4)} kB`,
-      );
-
-      // Every clip's own poster doubles as a section ground: it is already relevant, already
-      // measured, and already encoded. A ground pool that needs its own sourcing run is a pool
-      // that stays empty.
-      images.push({
-        id: `${group}/${name}-ground`,
-        group,
-        luminance: measured.luminance,
-        hue: measured.hue,
-        role: 'ground',
-        orientation: 'landscape',
-        rendition: poster,
-        description: sidecar.description ?? `${group} achtergrond`,
-        credit: sidecar.credit ?? null,
-      });
+    for (const { video, image } of clipsIn(group)) {
+      videos.push(video);
+      images.push(image);
     }
   }
-  return { videos, images };
+  for (const { video } of clipsIn(BRAND)) {
+    brand.push(video);
+  }
+  return { videos, images, brand };
 }
 
 function main() {
@@ -437,13 +555,14 @@ function main() {
     console.log(`synthesize: ${made} stand-in clip(s) written to ${path.relative(ROOT, SOURCES)}`);
   }
   console.log('ingesting:');
-  const { videos, images } = ingest();
+  const { videos, images, brand } = ingest();
 
   const manifest = {
     version: 1,
     builtAt: new Date().toISOString(),
     videos: videos.sort((a, b) => a.id.localeCompare(b.id)),
     images: images.sort((a, b) => a.id.localeCompare(b.id)),
+    brand: brand.sort((a, b) => a.id.localeCompare(b.id)),
   };
   writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2) + '\n');
 
@@ -464,6 +583,13 @@ function main() {
     process.exitCode = 1;
   } else {
     console.log(`coverage: all ${GROUPS.length} groups dressed in both light and dark`);
+  }
+  if (brand.length === 0) {
+    console.log(
+      `no ${BRAND} clip: the marketing hero has no footage. ` +
+        `Add sources/${BRAND}/ or re-run with --synthesize.`,
+    );
+    process.exitCode = 1;
   }
 }
 

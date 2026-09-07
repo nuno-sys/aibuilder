@@ -772,6 +772,13 @@ export function selectLibraryHero(intake: Intake, siteId: string): HeroVideo | n
     durationSeconds: chosen.durationSeconds,
     luminance: chosen.luminance,
     credit: chosen.credit,
+    portraitPoster: {
+      avifKeyTemplate: chosen.posterPortrait.avifKeyTemplate,
+      webpKeyTemplate: chosen.posterPortrait.webpKeyTemplate,
+      widths: [...chosen.posterPortrait.widths],
+      width: chosen.posterPortrait.width,
+      height: chosen.posterPortrait.height,
+    },
   };
 }
 

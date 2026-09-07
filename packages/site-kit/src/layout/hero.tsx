@@ -21,6 +21,15 @@ import type { Markup, SectionProps } from '../sections/shared';
  * needs the alpha algebra. The other three variants are provable by ordinary token contrast, which
  * is the point of having four.
  */
+/**
+ * The `sizes` every hero poster candidate is resolved against.
+ *
+ * Exported because `render.ts` puts the identical value on the `<link rel=preload imagesizes>`. If
+ * the two ever disagreed the preload scanner and the renderer would resolve different candidates
+ * and the page would download both — the exact failure the art direction exists to avoid.
+ */
+export const HERO_SIZES = '100vw';
+
 export function Hero(props: SectionProps<SectionOf<'hero'>>): Markup {
   const { section, doc, scope, ctx } = props;
   const fullbleed = section.variant === 'video_fullbleed';
@@ -82,12 +91,12 @@ export function Hero(props: SectionProps<SectionOf<'hero'>>): Markup {
           <source
             media="(max-width:767px)"
             type={source.type}
-            sizes="100vw"
+            sizes={HERO_SIZES}
             srcset={source.srcset}
           />
         ))}
         {poster.sources.map((source) => (
-          <source type={source.type} sizes="100vw" srcset={source.srcset} />
+          <source type={source.type} sizes={HERO_SIZES} srcset={source.srcset} />
         ))}
         {/*
           `alt=""` because the poster is decorative — the `<h1>` carries the meaning — and an empty
@@ -103,7 +112,7 @@ export function Hero(props: SectionProps<SectionOf<'hero'>>): Markup {
           alt=""
           width={String(poster.width)}
           height={String(poster.height)}
-          sizes="100vw"
+          sizes={HERO_SIZES}
           fetchpriority="high"
           decoding="sync"
         />

@@ -6,6 +6,9 @@ import {
   analyseDocument,
   buildTenantCsp,
   checkDocumentBudgets,
+  HERO_VIDEO_LANDSCAPE_BUDGET_BYTES,
+  HERO_VIDEO_PORTRAIT_BUDGET_BYTES,
+  checkHeroVideo,
   checkPosterInvariant,
   hasBlockingBudgetFindings,
   posterSatisfiesSizeInvariant,
@@ -226,5 +229,48 @@ describe('preloadLinkHeader', () => {
 
   it('returns null when there is nothing to preload', () => {
     expect(preloadLinkHeader([])).toBeNull();
+  });
+});
+
+describe('the hero motion gate', () => {
+  const OK = {
+    landscapePoster: { width: 2560, height: 1440 },
+    portraitPoster: { width: 1440, height: 2560 },
+    landscape: { width: 1920, height: 1080, maxBytes: 380_000 },
+    portrait: { width: 720, height: 1280, maxBytes: 110_000 },
+  };
+
+  it('passes a hero whose posters dominate and whose clips are within budget', () => {
+    expect(checkHeroVideo(OK)).toEqual([]);
+  });
+
+  it('catches a portrait poster the phone video would outsize', () => {
+    // The failure that motivated the separate 9:16 ladder: cover-fitting the landscape still into a
+    // phone viewport leaves the poster scored smaller than the video, and the video takes the LCP.
+    const findings = checkHeroVideo({ ...OK, portraitPoster: { width: 640, height: 360 } });
+    expect(findings.map((f) => f.code)).toEqual(['poster_smaller_than_video']);
+    expect(findings[0]?.severity).toBe('error');
+  });
+
+  it('catches a clip over budget at either breakpoint, and says so per breakpoint', () => {
+    const findings = checkHeroVideo({
+      ...OK,
+      landscape: { ...OK.landscape, maxBytes: 2_000_000 },
+      portrait: { ...OK.portrait, maxBytes: 900_000 },
+    });
+    expect(findings.map((f) => f.code)).toEqual(['hero_video_budget', 'hero_video_budget']);
+    expect(findings[0]?.message).toContain('(min-width:768px)');
+    expect(findings[1]?.message).toContain('(max-width:767px)');
+  });
+
+  it('holds the phone to a tighter ceiling than the desktop', () => {
+    // A clip that is fine on a laptop is not automatically fine on a phone; one budget for both
+    // would either starve the desktop or wave the phone through.
+    expect(HERO_VIDEO_PORTRAIT_BUDGET_BYTES).toBeLessThan(HERO_VIDEO_LANDSCAPE_BUDGET_BYTES);
+    const findings = checkHeroVideo({
+      ...OK,
+      portrait: { ...OK.portrait, maxBytes: HERO_VIDEO_LANDSCAPE_BUDGET_BYTES },
+    });
+    expect(findings.map((f) => f.code)).toEqual(['hero_video_budget']);
   });
 });

@@ -8,6 +8,7 @@ import { preloadFontHref } from './css/theme';
 import { SITE_JS } from './js/site';
 import { SPECULATION_RULES, documentOpen, renderHead, skipLink } from './layout/document';
 import { SiteFooter } from './layout/footer';
+import { HERO_SIZES } from './layout/hero';
 import { SiteHeader } from './layout/header';
 import { WhatsAppWidget } from './layout/whatsapp';
 import { projectPage, renderSha256 } from './project';
@@ -176,7 +177,8 @@ export async function renderPage(
             : [
                 {
                   media: '(max-width:767px)',
-                  href: firstCandidate(ctx.hero.portraitSources[0].srcset),
+                  imagesrcset: ctx.hero.portraitSources[0].srcset,
+                  imagesizes: HERO_SIZES,
                   type: ctx.hero.portraitSources[0].type,
                 },
               ]),
@@ -185,7 +187,8 @@ export async function renderPage(
             : [
                 {
                   media: '(min-width:768px)',
-                  href: firstCandidate(ctx.hero.poster.sources[0].srcset),
+                  imagesrcset: ctx.hero.poster.sources[0].srcset,
+                  imagesizes: HERO_SIZES,
                   type: ctx.hero.poster.sources[0].type,
                 },
               ]),
@@ -233,18 +236,4 @@ export async function renderPage(
 function whatsappMarkup(doc: SiteDoc, locale: Locale): string {
   const widget = WhatsAppWidget({ doc, locale });
   return widget === null ? '' : String(widget);
-}
-
-/**
- * The widest candidate of a `srcset`, for the art-directed preload.
- *
- * The preload has no `sizes`, so the browser cannot pick; handing it the largest rendition is
- * wrong on a small screen and handing it the smallest is wrong on a large one. The art direction
- * already splits portrait from landscape by `media`, so within each the FIRST candidate — the
- * narrowest — is the one a phone or a laptop at that breakpoint actually wants, and the `<picture>`
- * upgrades from there without a second fetch on the connections this matters for.
- */
-function firstCandidate(srcset: string): string {
-  const first = srcset.split(',')[0]?.trim() ?? '';
-  return first.split(/\s+/u)[0] ?? '';
 }
