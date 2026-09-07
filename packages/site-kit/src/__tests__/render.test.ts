@@ -140,12 +140,12 @@ describe('the document', () => {
 
   it('puts the skip link first in the body and the landmarks in order', async () => {
     const { html } = await render();
-    const body = html.indexOf('<body>');
+    const body = html.indexOf('<body ');
     const skip = html.indexOf('<a class="skip"');
     const header = html.indexOf('<header');
     const main = html.indexOf('<main id="main">');
     const footer = html.indexOf('<footer');
-    expect(skip).toBe(body + '<body>'.length);
+    expect(skip).toBe(html.indexOf('>', body) + 1);
     expect(header).toBeGreaterThan(skip);
     expect(main).toBeGreaterThan(header);
     expect(footer).toBeGreaterThan(main);
@@ -206,19 +206,19 @@ describe('the document', () => {
     // Below every fold there is: an eager fetch here competes with the LCP element for bandwidth
     // on exactly the connections that cannot spare it.
     expect(footer).toContain('loading="lazy"');
-    // One ink decision for every surface that puts type over pixels, so a site cannot read
-    // white-on-photo at the top and black-on-photo at the bottom.
+    // One ink decision for every surface that puts type over pixels, carried on the body, so a
+    // site cannot read white-on-photo at the top and black-on-photo at the bottom.
     const heroInk = /<section class="hero[^>]*data-ink="(light|dark)"/u.exec(html)?.[1];
-    expect(footer).toContain(`data-ink="${heroInk ?? ''}"`);
+    expect(html).toContain(`<body data-ink="${heroInk ?? ''}">`);
 
     // The scrim must reuse the HERO's derived alpha rather than a literal of its own. A second
     // constant is a second thing to keep true, and this one carries a 7:1 proof.
     expect(css.css).toContain('.site-footer__scrim');
     expect(css.css).toMatch(
-      /\.site-footer\[data-ink="light"\] \.site-footer__scrim\{background:rgb\(0 0 0 ?\/ ?var\(--hero-scrim-band\)\)/u,
+      /\[data-ink="light"\] \.site-footer__scrim\{background:rgb\(0 0 0 ?\/ ?var\(--hero-scrim-band\)\)/u,
     );
     expect(css.css).toMatch(
-      /\.site-footer\[data-ink="dark"\] \.site-footer__scrim\{background:rgb\(255 255 255 ?\/ ?var\(--hero-scrim-band\)\)/u,
+      /\[data-ink="dark"\] \.site-footer__scrim\{background:rgb\(255 255 255 ?\/ ?var\(--hero-scrim-band\)\)/u,
     );
   });
 

@@ -30,14 +30,10 @@ export const CSS: string = minifyCss(`
   .site-footer__scrim{ position:absolute; inset:0; z-index:-1 }
   /* Pure #fff / #000, not a theme token: the scrim algebra is derived for the extreme ink, and a
      slightly-off-white would invalidate the proof by a few percent for no visual gain. */
-  .site-footer[data-ink="light"]{ color:#fff }
-  .site-footer[data-ink="light"] .site-footer__scrim{
-    background:rgb(0 0 0 / var(--hero-scrim-band));
-  }
-  .site-footer[data-ink="dark"]{ color:#000 }
-  .site-footer[data-ink="dark"] .site-footer__scrim{
-    background:rgb(255 255 255 / var(--hero-scrim-band));
-  }
+  [data-ink="light"] .site-footer[data-ground]{ color:#fff }
+  [data-ink="light"] .site-footer__scrim{ background:rgb(0 0 0 / var(--hero-scrim-band)) }
+  [data-ink="dark"] .site-footer[data-ground]{ color:#000 }
+  [data-ink="dark"] .site-footer__scrim{ background:rgb(255 255 255 / var(--hero-scrim-band)) }
   /* Every colour that was a theme token becomes the pure ink. The proof covers currentColor over
      the scrim; it does not cover --t-fg-muted, which was proven against --t-bg — and --t-bg
      is not what is behind the type any more. */

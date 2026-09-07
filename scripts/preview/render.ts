@@ -236,6 +236,13 @@ function contextOf(site: DemoSite, locale: Locale): RenderContext {
     reviews: site.reviews,
     images,
     hero: heroOf(site, images),
+    // Resolved exactly as the generator resolves it, so a demo shows the bands a real site gets.
+    sectionGrounds: Object.fromEntries(
+      Object.entries(site.doc.sectionBackgrounds).flatMap(([sectionId, refId]) => {
+        const image = images[refId];
+        return image === undefined ? [] : [[sectionId, image] as const];
+      }),
+    ),
     map,
     sectionHeights,
     icons: {

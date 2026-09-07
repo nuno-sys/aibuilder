@@ -181,6 +181,23 @@ function resolveImage(asset: MediaAsset): ResolvedImage | null {
 }
 
 /**
+ * Photographic grounds behind ordinary sections, resolved from `doc.sectionBackgrounds`.
+ *
+ * The pipeline chose them and the pipeline measured their luminance; this only turns ref ids into
+ * URLs. A ref whose asset did not resolve is dropped rather than rendered as a broken box.
+ */
+function groundsFor(
+  doc: SiteDoc,
+  images: Readonly<Record<string, ResolvedImage>>,
+): Readonly<Record<string, ResolvedImage>> {
+  const grounds: Record<string, ResolvedImage> = {};
+  for (const [sectionId, refId] of Object.entries(doc.sectionBackgrounds)) {
+    const image = images[refId];
+    if (image !== undefined) grounds[sectionId] = image;
+  }
+  return grounds;
+}
+/**
  * The srcset for one library still ladder, as same-origin `/_a/l/…` paths.
  *
  * The ladder's `widths` are the widths that were actually encoded, so a candidate offered here is
@@ -397,6 +414,7 @@ export async function runRenderStep(
         reviews: [],
         images,
         hero,
+        sectionGrounds: groundsFor(doc, images),
         // The static map image is rendered to R2 at publish in a later phase; a null map renders the
         // address block without one, which is strictly better than a third-party Maps iframe (§7.22).
         map: null,

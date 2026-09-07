@@ -443,6 +443,7 @@ export function renderContext(overrides: Partial<RenderContext> = {}): RenderCon
         height: 1080,
       },
     },
+    sectionGrounds: {},
     map: { ...IMAGE, src: '/_a/map.aaaa1111.png', width: 640, height: 400, alt: '' },
     sectionHeights: Object.fromEntries(
       Array.from({ length: 18 }, (_value, index) => [`s${index + 1}`, 480 + index]),

@@ -206,7 +206,7 @@ describe('normalizeStructure', () => {
       makePage('home', 'home', [
         {
           ...heroSection('h1'),
-          ctas: [{ target: { kind: 'whatsapp' }, style: 'ghost' }],
+          ctas: [{ target: { kind: 'whatsapp', _: null }, style: 'ghost' }],
         },
       ]),
       makePage('contact', 'contact', [heroSection('h2')]),

@@ -110,6 +110,24 @@ function resolveImage(asset: MediaAsset, cdnOrigin: string): ResolvedImage | nul
   };
 }
 
+/**
+ * Photographic grounds behind ordinary sections, resolved from `doc.sectionBackgrounds`.
+ *
+ * Mirrors the generator's own resolution, for the same reason `heroFor` does: the editor must
+ * preview the document that will publish, not a quieter version of it.
+ */
+function groundsFor(
+  doc: SiteDoc,
+  images: Readonly<Record<string, ResolvedImage>>,
+): Readonly<Record<string, ResolvedImage>> {
+  const grounds: Record<string, ResolvedImage> = {};
+  for (const [sectionId, refId] of Object.entries(doc.sectionBackgrounds)) {
+    const image = images[refId];
+    if (image !== undefined) grounds[sectionId] = image;
+  }
+  return grounds;
+}
+
 /** A srcset over a library still ladder, on the CDN origin the dashboard preview loads from. */
 function librarySrcset(template: string, widths: readonly number[], cdnOrigin: string): string {
   return widths
@@ -275,6 +293,7 @@ export async function renderPreview(input: PreviewRenderInput): Promise<PreviewR
     reviews: [],
     images,
     hero,
+    sectionGrounds: groundsFor(doc, images),
     map: null,
     sectionHeights: {},
     icons: iconsFor(input.cdnOrigin),

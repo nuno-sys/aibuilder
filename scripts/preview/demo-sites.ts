@@ -199,6 +199,13 @@ function heroVideoFor(archetype: DnaId): HeroVideo {
     durationSeconds: 8,
     luminance: DNA[archetype].canonicalMode,
     credit: 'Plaatshouder — gegenereerd door de preview-harness',
+    portraitPoster: {
+      avifKeyTemplate: `_poster/${archetype}-p-{width}.avif`,
+      webpKeyTemplate: `_poster/${archetype}-p-{width}.webp`,
+      widths: [540, 720, 1080, 1440],
+      width: 1440,
+      height: 2560,
+    },
   };
 }
 

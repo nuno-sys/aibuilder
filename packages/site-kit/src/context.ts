@@ -114,6 +114,17 @@ export interface ResolvedImage {
   readonly dominantColor: string | null;
 }
 
+/**
+ * Photographic grounds behind ordinary sections, keyed by section id.
+ *
+ * Resolved by the composition root from `doc.sectionBackgrounds`, exactly as `images` and `hero`
+ * are: `site-kit` renders in a runner with no bindings, so anything it would otherwise have to
+ * fetch arrives already resolved. A section id with no entry has no ground, which is the normal
+ * case — most bands are a flat tone, and a page whose every band is a photograph reads as a
+ * slideshow rather than as a business.
+ */
+export type SectionGrounds = Readonly<Record<string, ResolvedImage>>;
+
 /** The hero's art-directed poster/video set. Built by the media pipeline, never by the model. */
 export interface HeroMedia {
   readonly poster: ResolvedImage;
@@ -153,6 +164,7 @@ export interface RenderContext {
   /** Resolved by `refId`, so a section's `MediaRef` never has to become a URL in this package. */
   readonly images: Readonly<Record<string, ResolvedImage>>;
   readonly hero: HeroMedia | null;
+  readonly sectionGrounds: SectionGrounds;
   /** The static map image rendered to R2 at publish. Never a third-party iframe. */
   readonly map: ResolvedImage | null;
   /** `contain-intrinsic-size` estimate per section id, computed at publish (§9.4). */

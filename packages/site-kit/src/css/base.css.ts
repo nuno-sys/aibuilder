@@ -148,6 +148,31 @@ export const LAYOUT_CSS: string = minifyCss(`
   }
   /* Never defer the LCP section. */
   .section:first-of-type{ content-visibility:visible }
+  /* A photographic ground behind an ordinary band. Same construction as the hero and the footer,
+     and the same DERIVED scrim alpha: compositing on an opaque backdrop is a*scrim+(1-a)*backdrop
+     per channel, so the worst case over any photograph is one known colour and the 7:1 proof holds
+     whatever the image turns out to be. Over a ground every colour resolves from currentColor,
+     because the theme's own muted token was proven against --t-bg and --t-bg is no longer what is
+     behind the type. */
+  .section[data-ground]{ position:relative; isolation:isolate; overflow:clip }
+  .section__media{ position:absolute; inset:0; z-index:-2 }
+  .section__media picture{ display:block; block-size:100% }
+  .section__ground{
+    inline-size:100%; block-size:100%;
+    object-fit:cover; object-position:var(--focal,50% 50%);
+  }
+  .section__scrim{ position:absolute; inset:0; z-index:-1 }
+  /* Pure #fff / #000, not a theme token: the algebra is derived for the extreme ink. The ink is
+     read off the body, so every surface that sets type over pixels agrees. */
+  [data-ink="light"] .section[data-ground]{ color:#fff }
+  [data-ink="light"] .section__scrim{ background:rgb(0 0 0 / var(--hero-scrim-band)) }
+  [data-ink="dark"] .section[data-ground]{ color:#000 }
+  [data-ink="dark"] .section__scrim{ background:rgb(255 255 255 / var(--hero-scrim-band)) }
+  .section[data-ground] a,
+  .section[data-ground] .u-fine,
+  .section[data-ground] h2,
+  .section[data-ground] h3{ color:inherit }
+  .section[data-ground] *{ border-color:color-mix(in oklab,currentColor 28%,transparent) }
   .stack > * + *{ margin-block-start:var(--stack-gap,var(--space-4)) }
   .cluster{ display:flex; flex-wrap:wrap; gap:var(--space-3); align-items:center }
   /* The inner min() is the fix for auto-fit overflow at 320 px: without it a 17 rem minimum

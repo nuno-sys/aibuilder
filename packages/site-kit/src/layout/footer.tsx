@@ -51,17 +51,12 @@ export function SiteFooter(props: {
 
   const groundRefId = doc.chrome.footerMediaRefId;
   const ground = groundRefId === null ? null : (props.ctx.images[groundRefId] ?? null);
-  // Same ink decision as the hero, from the same resolved token: one answer for every surface that
-  // puts type over pixels, so a site cannot read white-on-photo at the top and black-on-photo at
-  // the bottom. A custom property cannot be selected on, hence the data attribute.
-  const inkAttr = doc.theme.tokens['--hero-ink'] === 'light' ? 'light' : 'dark';
 
   return (
     <footer
       class="site-footer"
       data-style={doc.chrome.footerStyle}
       data-ground={ground === null ? undefined : '1'}
-      data-ink={ground === null ? undefined : inkAttr}
     >
       {ground === null ? null : (
         <div class="site-footer__media" aria-hidden="true">

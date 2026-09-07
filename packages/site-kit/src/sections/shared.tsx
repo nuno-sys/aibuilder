@@ -64,15 +64,23 @@ export function SectionShell(props: {
 }): Markup {
   const { section, tone, ctx } = props;
   const height = ctx.sectionHeights[section.id];
+  const ground = ctx.sectionGrounds[section.id] ?? null;
   return (
     <section
       class={`section ${props.extraClass ?? ''}`.trim()}
       id={section.id}
       data-tone={tone}
       data-variant={section.variant}
+      data-ground={ground === null ? undefined : '1'}
       style={`--sec-h:${Math.round(height ?? 720)}px`}
       aria-labelledby={headingId(section.id)}
     >
+      {ground === null ? null : (
+        <div class="section__media" aria-hidden="true">
+          <Picture image={ground} sizes="100vw" extraClass="section__ground" />
+          <div class="section__scrim"></div>
+        </div>
+      )}
       {props.children}
     </section>
   );

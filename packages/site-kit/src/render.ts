@@ -209,7 +209,11 @@ export async function renderPage(
   const html = [
     documentOpen(locale),
     head,
-    '</head><body>',
+    // ONE ink decision for every surface that sets type over pixels — the hero, a section with a
+    // photographic ground, the footer. `--hero-ink` is a resolved token and a custom property
+    // cannot be selected on, so its value is copied here where CSS can match it. Without a single
+    // source a site can read white-on-photo in the header and black-on-photo in a services band.
+    `</head><body data-ink="${themed.theme.tokens['--hero-ink'] === 'light' ? 'light' : 'dark'}">`,
     skipLink(locale),
     String(SiteHeader({ doc: themed, locale, currentPageId: pageId })),
     '<main id="main">',
