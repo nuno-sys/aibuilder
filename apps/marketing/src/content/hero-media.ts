@@ -1,40 +1,44 @@
 /**
- * The hero media manifest: every poster and video file the hero references, with the intrinsic
- * dimensions that make the LCP size invariant checkable.
+ * The hero media contract: what the sales page's own full-screen video header is allowed to be.
  *
- * WHY A MANIFEST AND NOT LITERALS IN THE COMPONENT
- * A `<video>` is an LCP candidate, and LCP stays open until the first user interaction — so timing
- * cannot stop the video from superseding the poster. Only a size invariant can:
+ * WHERE THE FILES COME FROM. Not from a hand-run ffmpeg line in a comment — that is what this file
+ * used to be, and the binaries it named were never in the repository, so the marketing hero was an
+ * empty box. They now come from the media library: the `brand` clip is ingested by exactly the
+ * encoder every tenant clip goes through, and `scripts/media-library/stage-marketing.mjs` copies
+ * its renditions into `public/media/hero/` and writes `hero-media.generated.ts`. One encoder, one
+ * set of budgets, one place a change lands. The sales page cannot promise a fast video header while
+ * shipping a slow one, because it is serving the same bytes the product produces.
+ *
+ * WHY THE LCP GUARDS LIVE HERE. A `<video>` is an LCP candidate, and LCP stays open until the first
+ * user interaction, so no amount of "mount the video later" can stop it from superseding the
+ * poster. Only a size invariant can:
  *
  *     poster intrinsic area  >=  video intrinsic area,  at every breakpoint
  *
- * because the LCP algorithm only replaces a candidate with a STRICTLY larger one. Keeping the
- * numbers here, next to the assertion below, means the invariant is enforced at build time rather
- * than rediscovered from a Lighthouse regression (SEO §4.1, §4.5; architecture §7.17).
+ * because the LCP algorithm replaces a candidate only with a STRICTLY larger one. The numbers are
+ * generated; the assertion is written here, next to the reason, so a re-encode that breaks the
+ * invariant fails the build instead of being rediscovered in a Lighthouse regression (SEO §4.1,
+ * §4.5; architecture §7.17).
  *
- * THE BINARY FILES ARE NOT IN THIS REPO. They are produced once by the media pipeline and uploaded
- * to `public/media/hero/` with exactly the names below. The encoder invocations are fixed by
- * SEO §4.5 and reproduced here so the names, dimensions and byte budgets cannot drift apart:
+ * WHY THERE ARE TWO VIDEOS. A phone getting the 1920x1080 desktop file is the single decision that
+ * gives background video its bad reputation: four times the bytes, letterboxed into the wrong
+ * shape. The portrait encode is a fraction of the bytes AND fills the screen. The user asked for a
+ * full-screen video header everywhere; the honest way to give a phone one is to send it a phone's
+ * video, not to send it the desktop's and hope.
  *
- *   POSTER (landscape 2400x1350, portrait 1170x2080) — AVIF primary, WebP fallback, JPEG for <img>:
- *     avifenc --min 0 --max 40 --speed 4 --yuv 420 --depth 8 --cicp 1/13/6 in.png out.avif
- *     cwebp -q 72 -m 6 -sharp_yuv in.png -o out.webp
- *     cjpeg -quality 74 -progressive -optimize -sample 2x2 -outfile out.jpg in.ppm
- *
- *   VIDEO (landscape only, 1920x1080, 8 s loop, NO audio track):
- *     ffmpeg -i master.mov -an -t 8 -vf "scale=1920:1080:flags=lanczos,fps=25" \
- *       -c:v libsvtav1 -crf 38 -preset 6 -g 50 -pix_fmt yuv420p hero-1920.av1.webm
- *     ffmpeg -i master.mov -an -t 8 -vf "scale=1920:1080:flags=lanczos,fps=25" \
- *       -c:v libx264 -profile:v high -level 4.0 -crf 27 -preset slower -tune film \
- *       -g 50 -pix_fmt yuv420p -movflags +faststart hero-1920.h264.mp4
- *
- * `-an` removes 15-25% of the bytes and removes every autoplay-policy edge case at once: a muted
- * video with an audio track can still be blocked by UA heuristics; a video with no audio track
- * cannot. `+faststart` puts the moov atom first, without which Safari downloads the entire file
- * before the first frame.
+ * The encoder settings themselves are stated once, in `scripts/media-library/ingest.mjs`. They are
+ * deliberately not repeated here: two copies of an encoder invocation is two copies that drift.
  */
 
-const BASE = '/media/hero';
+import {
+  brandCredit,
+  brandLandscape,
+  brandLuminance,
+  brandPortrait,
+  brandPoster,
+  brandPosterPortrait,
+} from './hero-media.generated';
+import type { GeneratedPoster, GeneratedVideo } from './hero-media.generated';
 
 export interface Dimensions {
   readonly width: number;
@@ -55,7 +59,7 @@ export interface HeroVideo {
   readonly av1: string;
   readonly h264: string;
   readonly intrinsic: Dimensions;
-  /** Publish-time byte budget (SEO §4.13). Asserted by the media pipeline, not by this module. */
+  /** Measured at encode time by the ingest, never estimated here. */
   readonly maxBytes: number;
 }
 
@@ -77,57 +81,130 @@ function assertPosterDominates(label: string, poster: Dimensions, video: Dimensi
   }
 }
 
-/** Landscape (>= 768px): the only breakpoint that ever mounts a video. */
-export const landscapePoster: HeroPoster = {
-  media: '(min-width: 768px)',
-  avifSrcset: `${BASE}/hero-l-1280.avif 1280w, ${BASE}/hero-l-1920.avif 1920w, ${BASE}/hero-l-2400.avif 2400w`,
-  webpSrcset: `${BASE}/hero-l-1280.webp 1280w, ${BASE}/hero-l-1920.webp 1920w, ${BASE}/hero-l-2400.webp 2400w`,
-  sizes: '100vw',
-  intrinsic: { width: 2400, height: 1350 },
-};
+/**
+ * Fails the build when a video's bytes exceed what a hero may cost.
+ *
+ * A budget that is not asserted is a wish. These are the ceilings SEO §4.13 sets for a header that
+ * has to load on a phone on a train, and they are checked against the sizes the encoder actually
+ * produced rather than the sizes it was asked for.
+ *
+ * @throws Error when the encode is over budget.
+ */
+function assertWithinBudget(label: string, video: GeneratedVideo, maxBytes: number): void {
+  if (video.maxBytes > maxBytes) {
+    throw new Error(
+      `Hero byte budget exceeded at ${label}: ${video.maxBytes} B against a ${maxBytes} B ceiling. ` +
+        'Re-encode at a higher CRF or shorten the loop; do not raise the ceiling.',
+    );
+  }
+}
 
 /**
- * Portrait (< 768px): poster only. Architecture §7.18 makes mobile poster-only by default, which
- * is also why there is no 9:16 encode to maintain — the still is a legitimate hero on its own.
+ * The tallest phone aspect a rung has to cover: 19.5/9, the shape of a modern flagship.
+ *
+ * A rung of width `w` is selected when `viewport width x DPR` is about `w`, so at DPR 1 the
+ * viewport is `w` CSS px wide and as tall as the device. If the rung's intrinsic area is smaller
+ * than that box, LCP scores the poster down to its intrinsic size while the video — clamped to the
+ * full box — scores higher, and the video takes the entry. Cutting the ladder at this aspect is
+ * what makes the argument hold at every rung rather than only at the top of the ladder.
  */
-export const portraitPoster: HeroPoster = {
-  media: '(max-width: 767px)',
-  avifSrcset: `${BASE}/hero-p-780.avif 780w, ${BASE}/hero-p-1170.avif 1170w`,
-  webpSrcset: `${BASE}/hero-p-780.webp 780w, ${BASE}/hero-p-1170.webp 1170w`,
-  sizes: '100vw',
-  intrinsic: { width: 1170, height: 2080 },
-};
-
-export const landscapeVideo: HeroVideo = {
-  av1: `${BASE}/hero-1920.av1.webm`,
-  h264: `${BASE}/hero-1920.h264.mp4`,
-  intrinsic: { width: 1920, height: 1080 },
-  maxBytes: 1_400_000,
-};
+const TALLEST_PHONE_ASPECT = 19.5 / 9;
 
 /**
- * The `<img>` `src`. Never AVIF: this is the last-resort candidate for a UA that supports neither
- * AVIF nor WebP, and its `width`/`height` attributes are what give the element an aspect ratio
- * before any byte arrives.
+ * Fails the build when a portrait rung is smaller than the viewport that selects it.
+ *
+ * @throws Error when any rung falls short.
  */
-export const posterFallbackJpeg = {
-  src: `${BASE}/hero-l-1920.jpg`,
-  intrinsic: { width: 1920, height: 1080 },
+function assertRungsCoverTheirViewports(poster: GeneratedPoster): void {
+  const ratio = poster.height / poster.width;
+  for (const candidate of poster.avifSrcset.split(', ')) {
+    const width = Number(candidate.split(' ')[1]?.replace('w', ''));
+    if (!Number.isFinite(width)) continue;
+    const area = width * Math.round(width * ratio);
+    const box = width * width * TALLEST_PHONE_ASPECT;
+    if (area + width < box) {
+      throw new Error(
+        `Portrait poster rung ${String(width)}w is ${String(Math.round(area))}px against a ` +
+          `${String(Math.round(box))}px viewport box. Cut the ladder at 9:19.5, not 9:16, ` +
+          'or the hero video takes the LCP entry on every phone that selects this rung.',
+      );
+    }
+  }
+}
+
+const toPoster = (poster: GeneratedPoster, media: string): HeroPoster => ({
+  media,
+  avifSrcset: poster.avifSrcset,
+  webpSrcset: poster.webpSrcset,
+  sizes: '100vw',
+  intrinsic: { width: poster.width, height: poster.height },
+});
+
+const toVideo = (video: GeneratedVideo): HeroVideo => ({
+  av1: video.av1,
+  h264: video.h264,
+  intrinsic: { width: video.width, height: video.height },
+  maxBytes: video.maxBytes,
+});
+
+/** Landscape, `(min-width: 768px)`. */
+export const landscapePoster: HeroPoster = toPoster(brandPoster, '(min-width: 768px)');
+
+/**
+ * Portrait, `(max-width: 767px)` — a real 9:16 crop, not the landscape still cover-fitted.
+ *
+ * The art direction is the visible reason. The load-bearing one is that LCP scores an image at
+ * `min(visible area, intrinsic area)`: cover-fitting the 16:9 ladder into a phone viewport picks a
+ * rung smaller than the hero is displayed at, so the poster is scored down while the portrait video
+ * is scored at the full box — and the video wins. Every rung of this ladder is larger than any
+ * phone hero is displayed at, so the poster is never capped and the video can at best tie.
+ */
+export const portraitPoster: HeroPoster = toPoster(brandPosterPortrait, '(max-width: 767px)');
+
+export const landscapeVideo: HeroVideo = toVideo(brandLandscape);
+
+/** The phone's own encode. Mounted below 768px, where the landscape file would be wrong twice. */
+export const portraitVideo: HeroVideo = toVideo(brandPortrait);
+
+/**
+ * The `<img>` `src`: the largest WebP rung.
+ *
+ * Never AVIF — this is the last-resort candidate for a UA that supports neither AVIF nor WebP…
+ * except that every UA which reaches this markup decodes WebP, which is why the ladder stops at two
+ * formats instead of carrying a JPEG rung nobody fetches. Its `width`/`height` attributes are what
+ * give the element an aspect ratio before any byte arrives.
+ */
+export const posterFallback = {
+  src: brandPoster.fallback,
+  intrinsic: { width: brandPoster.width, height: brandPoster.height },
 } as const;
 
 /**
- * Focal point for `object-position`. The composition is a bright, high-key interior; framing on the
- * upper-middle keeps the subject visible when a tall phone viewport crops the sides away.
+ * Focal point for `object-position`. Framing on the upper-middle keeps the subject visible when a
+ * tall phone viewport crops the sides away.
  */
 export const heroFocalPoint = '50% 42%';
 
+/** Measured off the pixels at ingest. The scrim washes white over light footage, ink over dark. */
+export const heroLuminance = brandLuminance;
+
+/** Attribution the licence requires, rendered in the footer. `null` when none is required. */
+export const heroCredit = brandCredit;
+
 assertPosterDominates('landscape', landscapePoster.intrinsic, landscapeVideo.intrinsic);
+assertPosterDominates('portrait', portraitPoster.intrinsic, portraitVideo.intrinsic);
+assertRungsCoverTheirViewports(brandPosterPortrait);
+
+// Landscape is allowed more because it only ever loads on a wide viewport, which correlates with a
+// connection that can afford it; the phone's ceiling is a third of that.
+assertWithinBudget('landscape', brandLandscape, 1_400_000);
+assertWithinBudget('portrait', brandPortrait, 450_000);
 
 /**
  * Art-directed `<link rel="preload">` descriptors for `<head>`.
  *
  * `imagesrcset` + `imagesizes` mirror the `<picture>` exactly, so the preload resolves to the same
- * candidate the renderer will pick — preloading a single fixed URL against a three-entry srcset
+ * candidate the renderer will pick — preloading a single fixed URL against a multi-entry srcset
  * downloads the wrong file and pays for it twice. Only AVIF is preloaded; a UA without AVIF support
  * discards the hint and fetches WebP normally.
  */

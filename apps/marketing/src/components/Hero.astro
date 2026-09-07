@@ -6,9 +6,10 @@
  * interaction, so no amount of "fade the video in later" can stop it from superseding the poster.
  * Three guards, in order of how much they actually guarantee (SEO §4.1):
  *
- *   1. THE SIZE INVARIANT. The poster's intrinsic area is >= the video's at every breakpoint
- *      (2400x1350 vs 1920x1080), and the LCP algorithm only replaces a candidate with a STRICTLY
- *      larger one. Asserted at build time in `content/hero-media.ts`.
+ *   1. THE SIZE INVARIANT. The poster's intrinsic area is >= the video's at every breakpoint —
+ *      landscape against landscape, and the 9:16 crop against the portrait encode — and the LCP
+ *      algorithm only replaces a candidate with a STRICTLY larger one. Asserted at build time in
+ *      `content/hero-media.ts`, over the numbers the encoder actually produced.
  *   2. `opacity: 0` until the video has a real decoded frame. Chrome excludes fully transparent
  *      elements from LCP entirely.
  *   3. The video mounts only after `load`, after idle, and after LCP has been attributed to the
@@ -34,7 +35,8 @@ import {
   landscapePoster,
   landscapeVideo,
   portraitPoster,
-  posterFallbackJpeg,
+  portraitVideo,
+  posterFallback,
 } from '../content/hero-media';
 
 interface Props {
@@ -96,10 +98,11 @@ const {
     */}
     <img
       class="hero__poster"
-      src={posterFallbackJpeg.src}
+      src={posterFallback.src}
       alt=""
-      width={posterFallbackJpeg.intrinsic.width}
-      height={posterFallbackJpeg.intrinsic.height}
+      width={posterFallback.intrinsic.width}
+      height={posterFallback.intrinsic.height}
+      sizes={landscapePoster.sizes}
       fetchpriority="high"
       decoding="sync"
     />
@@ -122,8 +125,10 @@ const {
     tabindex="-1"
     width={landscapeVideo.intrinsic.width}
     height={landscapeVideo.intrinsic.height}
-    data-src-av1={landscapeVideo.av1}
-    data-src-h264={landscapeVideo.h264}></video>
+    data-src-desktop-av1={landscapeVideo.av1}
+    data-src-desktop-h264={landscapeVideo.h264}
+    data-src-mobile-av1={portraitVideo.av1}
+    data-src-mobile-h264={portraitVideo.h264}></video>
 
   <div class="hero__scrim" aria-hidden="true"></div>
 
@@ -308,19 +313,30 @@ const {
 
   if (video && poster) {
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-    // Architecture §7.18: mobile default is poster-only. This is also what makes it safe to mount
-    // on Safari and Firefox despite the Network Information API being absent there — the class of
-    // device that guard was written to protect (a phone on a metered connection) is already
-    // excluded by viewport, so "unknown connection" on a desktop is not treated as a hard block.
-    const wideEnough = matchMedia('(min-width: 768px)');
+    // Not a permission to play — the phone has its own encode and gets one. This only picks WHICH
+    // pair of sources to attach, and it is the same 768px boundary the poster's art direction uses,
+    // so the still and the clip always agree about which shape the viewport is.
+    const wide = matchMedia('(min-width: 768px)');
 
     const drop = (): void => {
       video.pause();
       video.remove();
     };
 
+    /**
+     * Whether this device may have the video at all.
+     *
+     * REFUSAL IS ON EVIDENCE, NEVER ON ABSENCE. The Network Information API does not exist in
+     * Safari or Firefox, so treating "unknown" as "slow" would silently withhold the header from
+     * every iPhone — which is the majority of the phones this page is read on, and precisely the
+     * device the user asked to see a full-screen video on. Each gate below therefore fires only
+     * when the platform positively reports a reason: Data Saver on, a measured 2g/3g connection, a
+     * measured downlink under 1.5 Mbps, or a device reporting 1 GB of RAM. `deviceMemory` reports
+     * in coarse powers of two and caps at 8, so a modern phone reports 4 or 8 and only genuinely
+     * low-end hardware reports less than 2.
+     */
     const allowed = (): boolean => {
-      if (reducedMotion.matches || !wideEnough.matches) {
+      if (reducedMotion.matches) {
         return false;
       }
       const connection = readConnection();
@@ -334,7 +350,7 @@ const {
         return false;
       }
       const memory = readDeviceMemory();
-      return memory === undefined || memory >= 4;
+      return memory === undefined || memory >= 2;
     };
 
     // Gate 3: do not mount until LCP has actually been recorded against the poster. Safari and
@@ -356,7 +372,7 @@ const {
       if (document.visibilityState !== 'visible' || !allowed()) {
         return;
       }
-      const { srcAv1, srcH264 } = video.dataset;
+      const { srcDesktopAv1, srcDesktopH264, srcMobileAv1, srcMobileH264 } = video.dataset;
       const addSource = (src: string | undefined, type: string): void => {
         if (src === undefined) {
           return;
@@ -366,9 +382,13 @@ const {
         source.type = type;
         video.appendChild(source);
       };
-      // AV1/WebM first (Chrome, Edge, Firefox); H.264/MP4 is the Safari and legacy fallback.
-      addSource(srcAv1, 'video/webm; codecs="av01.0.05M.08"');
-      addSource(srcH264, 'video/mp4; codecs="avc1.640028"');
+      // The phone gets the 720x1280 encode, not the desktop file scaled down: a fraction of the
+      // bytes, and it fills the screen instead of sitting letterboxed in it. AV1/WebM first
+      // (Chrome, Edge, Firefox); H.264/MP4 is the Safari and legacy fallback.
+      const av1 = wide.matches ? srcDesktopAv1 : srcMobileAv1;
+      const h264 = wide.matches ? srcDesktopH264 : srcMobileH264;
+      addSource(av1, 'video/webm; codecs="av01.0.05M.08"');
+      addSource(h264, 'video/mp4; codecs="avc1.640028"');
       video.load();
       void video
         .play()

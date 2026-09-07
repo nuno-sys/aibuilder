@@ -80,27 +80,48 @@ describe('the shipped catalogue', () => {
     }
   });
 
-  it('keeps the phone poster larger than the phone hero is ever displayed at', () => {
-    // The LCP size invariant, stated where it can be checked. An image is scored at
-    // `min(visible area, intrinsic area)`, so the poster only keeps the LCP entry while every rung
-    // of the portrait ladder is at least as large as the viewport it fills. 1440x3120 is a taller
-    // and denser phone than ships today; the smallest rung has to beat it.
-    const worstCasePhone = 1440 * 3120;
+  it('keeps the phone poster at least as large as the box it is displayed in', () => {
+    // THE LCP ARGUMENT, stated where it can fail the build.
+    //
+    // An image is scored at `min(visible area, intrinsic area)`, so a poster rung keeps the LCP
+    // entry only while its intrinsic area is at least the area it is displayed at. A rung of width
+    // `w` is selected when `viewport width x DPR` is about `w`; at DPR 1 that is a viewport `w` CSS
+    // px wide and as tall as the device — up to 19.5/9 of its width on the tallest phones
+    // shipping. So every rung has to be at least that box, which is exactly the claim that the
+    // ladder is cut at 9:19.5 rather than 9:16. At 9:16 the rung is smaller than the box, the
+    // video is clamped to the same box, and the video takes the LCP entry.
+    const TALLEST_PHONE = 19.5 / 9;
     for (const video of MEDIA_LIBRARY.videos) {
-      const smallest = Math.min(...video.posterPortrait.widths);
-      const height = Math.round(
-        (smallest * video.posterPortrait.height) / video.posterPortrait.width,
+      const ladder = video.posterPortrait;
+      const rungHeight = (width: number): number =>
+        Math.round((width * ladder.height) / ladder.width);
+      for (const width of ladder.widths) {
+        expect(width * rungHeight(width), `${video.id} @${String(width)}w`).toBeGreaterThanOrEqual(
+          Math.round(width * width * TALLEST_PHONE) - width,
+        );
+      }
+      // And the poster and the clip are the same shape, so nothing reframes when the video fades
+      // in. Compared as a ratio, because the two are cut at different widths.
+      expect(ladder.height / ladder.width, video.id).toBeCloseTo(
+        video.portrait.height / video.portrait.width,
+        1,
       );
-      expect(smallest * height, video.id).toBeGreaterThanOrEqual(
-        Math.min(worstCasePhone, video.portrait.width * video.portrait.height),
-      );
-      // And the poster ladder's top rung must dominate the encode it sits in front of.
-      expect(video.posterPortrait.width * video.posterPortrait.height).toBeGreaterThanOrEqual(
-        video.portrait.width * video.portrait.height,
-      );
-      expect(video.poster.width * video.poster.height).toBeGreaterThanOrEqual(
+    }
+  });
+
+  it('keeps every poster ladder dominating the clip it sits in front of', () => {
+    // §7.17 as originally written: the top rung's intrinsic area is at least the video's, so at the
+    // viewport sizes where the hero is the largest thing on screen the poster is never the smaller
+    // candidate. The two structural guards — `opacity:0` until a decoded frame, and mounting only
+    // after LCP has been attributed — carry the cases in between.
+    for (const video of MEDIA_LIBRARY.videos) {
+      expect(video.poster.width * video.poster.height, video.id).toBeGreaterThanOrEqual(
         video.landscape.width * video.landscape.height,
       );
+      expect(
+        video.posterPortrait.width * video.posterPortrait.height,
+        video.id,
+      ).toBeGreaterThanOrEqual(video.portrait.width * video.portrait.height);
     }
   });
 

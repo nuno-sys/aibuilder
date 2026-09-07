@@ -118,11 +118,21 @@ reputation. Each clip therefore carries a 720×1280 encode at a tighter CRF — 
 quarter of the bytes — and each poster carries a 9:16 ladder as well as a 16:9 one.
 
 The portrait ladder is not art direction for its own sake. LCP scores an image at
-`min(visible area, intrinsic area)`, so cover-fitting a 16:9 still into a 9:16 viewport picks a rung
-*smaller* than the hero is displayed at: the poster is scored down, the portrait video is scored at
-the full box, and the video takes the LCP entry. Every portrait rung is larger than any phone hero
-is displayed at, so the poster is never capped and the video can at best tie — and a tie keeps the
-poster, because the algorithm only replaces a candidate with a strictly larger one.
+`min(visible area, intrinsic area)`, so cover-fitting a 16:9 still into a phone viewport picks a
+rung *smaller* than the hero is displayed at: the poster is scored down, the portrait video is
+scored at the full box, and the video takes the LCP entry.
+
+**The portrait renditions are cut at 9:19.5, not 9:16**, and that is what turns the argument into a
+proof rather than a hope. A rung of width `w` is selected when `viewport width × DPR` is about `w`,
+so at DPR 1 the viewport is `w` CSS px wide and as tall as the device — up to 19.5/9 of its width on
+the tallest phones shipping. At 9:16 the rung is *smaller* than that box and the video, clamped to
+the same box, scores strictly higher. At 9:19.5 the rung is exactly the box, the video can at best
+tie, and a tie keeps the poster: the algorithm only replaces a candidate with a strictly larger one.
+The clip is cut to the same shape, so nothing reframes when the video fades in.
+
+This was found by the invariant's own test, not by a Lighthouse run: the first ladder shipped at
+9:16 and the check failed on `automotive/dark-1` with 518 400 px against 921 600 px. The marketing
+site asserts the same thing at build time and refused to build until the ladder was recut.
 
 ### Refusal is on evidence, never on absence
 

@@ -82,25 +82,40 @@ const POSTER_WIDTHS = [640, 960, 1280, 1920, 2560];
  *
  * LCP compares a candidate's VISIBLE area capped by its INTRINSIC area, so an image displayed
  * larger than it was encoded is scored at its intrinsic size. Cover-fitting a 16:9 still into a
- * 9:16 viewport is exactly that case: at 390x844 CSS px the landscape ladder's 640-wide rung is
+ * phone viewport is exactly that case: at 390x844 CSS px the landscape ladder's 640-wide rung is
  * 640x360 = 0.23 Mpx against 0.33 Mpx of visible hero, so the poster scores 0.23 and the portrait
- * VIDEO — clamped to the same 0.33 — scores strictly higher and steals the LCP entry. Every rung
- * here is at least 540x960 = 0.52 Mpx, which is larger than any phone hero is displayed at, so the
- * poster is never capped and the video can at best tie. A tie keeps the poster: the LCP algorithm
- * only replaces a candidate with a strictly larger one.
+ * VIDEO — clamped to the same 0.33 — scores strictly higher and steals the LCP entry.
  *
- * 540 covers a 1x phone, 720 a small 2x, 1080 a 3x flagship, 1440 a tablet in portrait.
+ * The rungs below are cut at `PORTRAIT_ASPECT`, which is what makes each one at least as large as
+ * the box that selects it. 540 covers a 1x phone, 720 a small 2x, 1080 a 3x flagship, 1440 a
+ * tablet in portrait.
  */
 const PORTRAIT_POSTER_WIDTHS = [540, 720, 1080, 1440];
 
-/** The portrait poster's shape, identical to the portrait video's so the two crop the same way. */
-const PORTRAIT_ASPECT = 9 / 16;
+/**
+ * The portrait poster's shape, identical to the portrait video's so the two crop the same way.
+ *
+ * 9:19.5 rather than 9:16, and this is what makes the LCP argument a proof rather than a hope. An
+ * image is scored at `min(visible area, intrinsic area)`, so a rung only keeps the LCP entry while
+ * its intrinsic area is at least the area it is displayed at. A rung of width `w` is selected when
+ * `viewport width x DPR` is about `w`, so at DPR 1 the viewport is `w` CSS px wide and as tall as
+ * the device — up to 19.5/9 of its width on the tallest phones shipping. At 9:16 the rung is
+ * smaller than that box and the video, clamped to the same box, scores strictly higher and takes
+ * the LCP entry. At 9:19.5 the rung is exactly the box, the video can at best tie, and a tie keeps
+ * the poster: the algorithm only replaces a candidate with a strictly larger one.
+ */
+const PORTRAIT_ASPECT = 9 / 19.5;
 
 const VIDEO_TARGETS = [
   { role: 'landscape', width: 1920, height: 1080, av1Crf: 38, h264Crf: 27 },
   // A phone gets its own encode. Handing it the landscape file is the single decision that gives
   // background video its bad reputation: four times the bytes, letterboxed into the wrong shape.
-  { role: 'portrait', width: 720, height: 1280, av1Crf: 42, h264Crf: 31 },
+  //
+  // 720x1560 is 9:19.5, the shape of a modern phone — NOT 9:16. Two reasons, and the second is the
+  // load-bearing one. It fills the screen without cropping; and it is the same shape as the
+  // portrait poster, so the moment the video fades in nothing reframes. A 9:16 encode behind a
+  // 9:19.5 poster crops another 18% off the sides at the exact instant the visitor is looking.
+  { role: 'portrait', width: 720, height: 1560, av1Crf: 42, h264Crf: 31 },
 ];
 
 const DURATION = 8;
