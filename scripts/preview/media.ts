@@ -666,8 +666,16 @@ export function libraryUrl(key: string): string {
  *
  * `null` when the library is empty or cannot dress this combination. The header is then a
  * full-screen poster, which is exactly what production does.
+ *
+ * ALSO NULL WHEN THE BINARIES ARE NOT ON DISK. The catalogue is committed and the binaries are not
+ * — `.media-library/` is git-ignored — so a fresh clone that has not run `pnpm media:ingest` has
+ * every key and none of the bytes. Selecting anyway would emit a portrait `<source>` whose srcset
+ * 404s, and a `<picture>` does not fall through to the next source when the matched one fails: the
+ * phone would get a broken image rather than a poster. Checking the directory keeps the harness
+ * honest on a machine that has never run the ingest.
  */
 export function selectDemoHero(site: DemoSite): LibraryVideo | null {
+  if (!existsSync(LIBRARY_DIR)) return null;
   const industry = INDUSTRIES.find((entry) => entry.key === site.doc.facts.industryKey);
   if (industry === undefined) return null;
   const dna = DNA[site.archetype];

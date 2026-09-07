@@ -162,7 +162,9 @@ function heroOf(site: DemoSite, images: Readonly<Record<string, ResolvedImage>>)
     */
     portraitSources:
       clip === null
-        ? []
+        ? // No library on this machine: fall back to the harness's own 9:19.5 art, so the mobile
+          // art direction is still visible on a clone that has not run `pnpm media:ingest`.
+          [...(images[site.heroPortraitRefId]?.sources ?? [])]
         : [
             {
               type: 'image/avif',
