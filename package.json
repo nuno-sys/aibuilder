@@ -27,7 +27,9 @@
     "migrate:shard:remote": "wrangler d1 migrations apply aibuilder-shard-000 --remote --config apps/api/wrangler.jsonc",
     "seed:taxonomy": "node scripts/generate-taxonomy-seed.mjs",
     "preview": "node scripts/preview/run.mjs all",
-    "preview:serve": "node scripts/preview/run.mjs serve"
+    "preview:serve": "node scripts/preview/run.mjs serve",
+    "media:ingest": "node scripts/media-library/ingest.mjs",
+    "media:catalogue": "node scripts/media-library/emit-catalogue.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",

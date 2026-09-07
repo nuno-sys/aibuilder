@@ -237,6 +237,22 @@ export const MediaAssetSchema = z.object({
    */
   luminance: LuminanceClassSchema.nullable(),
   /**
+   * The responsive ladder, when this asset has one.
+   *
+   * `null` means the asset is a single file at `r2Key` — which is what an owner's upload is until
+   * the derivative pipeline has run on it. Library assets always carry a ladder, because the whole
+   * point of pre-optimising is that a phone is never sent the desktop rendition. The renderer
+   * substitutes `{width}` to build the `srcset`; a width that is not in `widths` was never encoded
+   * and must never be offered.
+   */
+  renditions: z
+    .object({
+      avifKeyTemplate: z.string().min(1).max(512),
+      webpKeyTemplate: z.string().min(1).max(512),
+      widths: z.array(z.number().int().positive()).min(1).max(8),
+    })
+    .nullable(),
+  /**
    * Written by the media pipeline, not by the model.
    * Phase 2: alt text becomes a per-locale slot once the editor can translate it.
    */

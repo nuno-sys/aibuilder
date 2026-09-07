@@ -1,10 +1,18 @@
-import { classifyLuminance, industryByKey, mediaOriginalKey } from '@aibuilder/core';
+import {
+  MEDIA_LIBRARY,
+  classifyLuminance,
+  industryByKey,
+  mediaOriginalKey,
+  selectGrounds,
+  selectHeroVideo,
+} from '@aibuilder/core';
+import type { MediaGroupKey } from '@aibuilder/core';
 import type { IndustryGroupKey, Intake } from '@aibuilder/core';
 import { shard, shardById } from '@aibuilder/db';
 import type { MediaAssetId, MediaAssetRow } from '@aibuilder/db';
 import type { MediaCandidate } from '@aibuilder/ai';
 import { HeroVideoSchema, LuminanceClassSchema } from '@aibuilder/site-schema';
-import type { LuminanceClass } from '@aibuilder/site-schema';
+import type { HeroVideo, LuminanceClass } from '@aibuilder/site-schema';
 import { DNA } from '@aibuilder/site-kit';
 import { z } from 'zod';
 
@@ -186,6 +194,14 @@ export const ResolvedMediaSchema = z.object({
    * will survive on it.
    */
   luminance: LuminanceClassSchema.nullable(),
+  /** The responsive ladder for library assets; `null` for a single-file upload. */
+  renditions: z
+    .object({
+      avifKeyTemplate: z.string().min(1).max(512),
+      webpKeyTemplate: z.string().min(1).max(512),
+      widths: z.array(z.number().int().positive()).min(1).max(8),
+    })
+    .nullable(),
   altText: z.string().max(300).nullable(),
   credit: z.string().max(200).nullable(),
 });
@@ -523,6 +539,8 @@ function fromUpload(row: MediaAssetRow): {
       blurhash: row.blurhash,
       dominantColor: row.dominant_color,
       luminance: classifyLuminance(row.dominant_color),
+      // Phase 3: the queue consumer's derivatives become a ladder here.
+      renditions: null,
       altText: row.alt_text,
       credit: row.attribution,
     },
@@ -633,6 +651,7 @@ export async function runMediaStep(env: Env, ids: RunIds, intake: Intake): Promi
         blurhash: null,
         dominantColor: photo.avgColor,
         luminance: classifyLuminance(photo.avgColor),
+        renditions: null,
         altText: photo.alt.length > 0 ? photo.alt : null,
         credit: photo.credit,
       };
@@ -644,14 +663,21 @@ export async function runMediaStep(env: Env, ids: RunIds, intake: Intake): Promi
   // is a property of the INDUSTRY and the industry came in on the intake. That is enough to pick a
   // footer ground whose luminance will match the site that gets built on top of it.
   const expectedMode = expectedColorMode(intake);
+  // Library grounds enter the SAME asset map as uploads and stock: one resolution path, one place
+  // a dangling ref can be caught, and the editor sees them as ordinary media it can swap out.
+  for (const ground of selectLibraryGrounds(intake, ids.siteId, LIBRARY_GROUND_COUNT)) {
+    assets[ground.refId] = ground.asset;
+    candidates.push(ground.candidate);
+  }
   const footerMediaRefId = pickFooterGround(assets, expectedMode);
 
   const manifest: MediaManifest = {
     candidates,
     assets,
-    // Phase 3: the stock video search fills this. Until it does, `null` is a complete answer and
-    // not a hole — the hero poster is an ordinary asset and the header is a full-screen still.
-    heroVideo: null,
+    // Selected from the pre-built library, not searched for. Every clip in it was transcoded and
+    // measured at ingest, so this is an array filter against bundled data: no network call, no
+    // quota, no transcode, and no failure mode on the path the customer is watching.
+    heroVideo: selectLibraryHero(intake, ids.siteId),
     footerMediaRefId,
     // Section ids do not exist yet: they are minted by the structure step. `assemble` assigns
     // backgrounds once it has both the manifest and the page tree.
@@ -705,4 +731,123 @@ export function pickFooterGround(
     if (asset.luminance === mode) return refId;
   }
   return null;
+}
+
+/**
+ * Picks the hero clip out of the pre-built library.
+ *
+ * Luminance is a hard constraint and the accent hue is a preference — see
+ * `packages/core/src/media-library/select.ts`. Seeded on the site id so the choice is stable across
+ * re-runs of the same job and different between two businesses in the same trade.
+ *
+ * Returns `null` when the library cannot dress this combination. That is a complete answer: the
+ * poster is an ordinary asset in the manifest and the header is a full-screen still either way.
+ */
+export function selectLibraryHero(intake: Intake, siteId: string): HeroVideo | null {
+  const industry = industryByKey(intake.industryKey);
+  if (industry === undefined || industry === null) return null;
+  const dna = DNA[industry.dnaId];
+  const chosen = selectHeroVideo(MEDIA_LIBRARY, {
+    group: industry.groupKey as MediaGroupKey,
+    colorMode: dna.canonicalMode,
+    accentHue: dna.accent.hue,
+    seed: siteId,
+  });
+  if (chosen === null) return null;
+  return {
+    landscape: {
+      av1R2Key: chosen.landscape.av1Key,
+      h264R2Key: chosen.landscape.h264Key,
+      width: chosen.landscape.width,
+      height: chosen.landscape.height,
+      maxBytes: chosen.landscape.maxBytes,
+    },
+    portrait: {
+      av1R2Key: chosen.portrait.av1Key,
+      h264R2Key: chosen.portrait.h264Key,
+      width: chosen.portrait.width,
+      height: chosen.portrait.height,
+      maxBytes: chosen.portrait.maxBytes,
+    },
+    durationSeconds: chosen.durationSeconds,
+    luminance: chosen.luminance,
+    credit: chosen.credit,
+  };
+}
+
+/**
+ * How many grounds to pull from the library.
+ *
+ * Three, not more. The hero already carries full-bleed motion; a page whose every band is a photo
+ * reads as a slideshow rather than as a business. `assemble` assigns at most one per page.
+ */
+const LIBRARY_GROUND_COUNT = 3;
+
+/** A library ground, in the shape the manifest and the model's candidate list both need. */
+interface SelectedGround {
+  readonly refId: string;
+  readonly asset: z.infer<typeof ResolvedMediaSchema>;
+  readonly candidate: MediaCandidate;
+}
+
+/**
+ * Photographic grounds for ordinary sections, from the pre-built library.
+ *
+ * Same rules as the hero: luminance must match the mode the copy will be set in, hue is a
+ * preference, and the seed keeps two businesses in one trade from getting the same set.
+ *
+ * `r2Key` points at the LARGEST WebP as the single-file fallback, and `renditions` carries the
+ * whole ladder — which is what actually gets served. Without the ladder a phone would download a
+ * 2560px still, which is the exact waste pre-optimising exists to remove.
+ */
+export function selectLibraryGrounds(
+  intake: Intake,
+  siteId: string,
+  count: number,
+): readonly SelectedGround[] {
+  const industry = industryByKey(intake.industryKey);
+  if (industry === undefined || industry === null) return [];
+  const dna = DNA[industry.dnaId];
+  const chosen = selectGrounds(
+    MEDIA_LIBRARY,
+    {
+      group: industry.groupKey as MediaGroupKey,
+      colorMode: dna.canonicalMode,
+      accentHue: dna.accent.hue,
+      seed: siteId,
+    },
+    count,
+  );
+  return chosen.map((image, index) => {
+    const refId = `lib_${String(index)}`;
+    const widest =
+      image.rendition.widths[image.rendition.widths.length - 1] ?? image.rendition.width;
+    return {
+      refId,
+      asset: {
+        refId,
+        r2Key: image.rendition.webpKeyTemplate.replace('{width}', String(widest)),
+        mimeType: 'image/webp',
+        width: image.rendition.width,
+        height: image.rendition.height,
+        blurhash: null,
+        dominantColor: null,
+        luminance: image.luminance,
+        renditions: {
+          avifKeyTemplate: image.rendition.avifKeyTemplate,
+          webpKeyTemplate: image.rendition.webpKeyTemplate,
+          widths: [...image.rendition.widths],
+        },
+        altText: image.description,
+        credit: image.credit,
+      },
+      candidate: {
+        refId,
+        kind: 'image',
+        description: image.description,
+        orientation: 'landscape',
+        source: 'stock',
+      },
+    };
+  });
 }

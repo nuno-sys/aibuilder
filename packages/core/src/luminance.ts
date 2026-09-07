@@ -87,3 +87,41 @@ export function luminanceMatchesMode(
 ): boolean {
   return luminance === null || luminance === colorMode;
 }
+
+/**
+ * Dominant hue of a representative colour, in degrees, or `null` when there is no meaningful hue.
+ *
+ * Near-grey footage returns `null` rather than a hue derived from rounding noise: at very low
+ * saturation the hue angle is numerically unstable and meaningless, and a selector that trusted it
+ * would prefer clips for a reason that does not exist. The 0.08 floor is where the eye stops
+ * reading a tint as a colour.
+ */
+export function hueOfHex(hex: string): number | null {
+  const rgb = parseHexColour(hex);
+  if (rgb === null) return null;
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  const lightness = (max + min) / 2;
+  const saturation = delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1) || Number.EPSILON);
+  if (delta === 0 || saturation < 0.08) return null;
+
+  let hue: number;
+  if (max === r) hue = ((g - b) / delta) % 6;
+  else if (max === g) hue = (b - r) / delta + 2;
+  else hue = (r - g) / delta + 4;
+  hue *= 60;
+  return Math.round(((hue % 360) + 360) % 360);
+}
+
+/** Formats 8-bit channels as `#rrggbb`. The inverse of `parseHexColour` for ingest tooling. */
+export function toHexColour(r: number, g: number, b: number): string {
+  const part = (value: number): string =>
+    Math.max(0, Math.min(255, Math.round(value)))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${part(r)}${part(g)}${part(b)}`;
+}

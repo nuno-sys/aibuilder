@@ -170,6 +170,7 @@ function media(refId: string, hash: string): MediaAsset {
     blurhash: null,
     dominantColor: '#3a2a1c',
     luminance: 'dark',
+    renditions: null,
     altText: HOSTILE,
     credit: null,
   };
@@ -367,6 +368,7 @@ const IMAGE = {
   focal: '50% 50%',
   dominantColor: '#3a2a1c',
   luminance: 'dark',
+  renditions: null,
 } as const;
 
 /** A `RenderContext` with every injected capability present. */

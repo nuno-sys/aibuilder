@@ -219,6 +219,7 @@ function mediaManifest(
       // Measured with the same classifier production uses, so the demo exercises the real rule
       // rather than a hand-written answer that could disagree with it.
       luminance: classifyLuminance(dominantColor),
+      renditions: null,
       altText: asset.alt,
       credit: null,
     };

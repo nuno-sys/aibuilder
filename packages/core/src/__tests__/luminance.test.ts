@@ -5,7 +5,9 @@ import {
   classifyLuminance,
   luminanceMatchesMode,
   parseHexColour,
+  hueOfHex,
   relativeLuminanceOfHex,
+  toHexColour,
 } from '../luminance';
 
 describe('parseHexColour', () => {
@@ -73,5 +75,28 @@ describe('luminanceMatchesMode', () => {
   it('permits unknown, because no header is worse than a hard-working scrim', () => {
     expect(luminanceMatchesMode(null, 'dark')).toBe(true);
     expect(luminanceMatchesMode(null, 'light')).toBe(true);
+  });
+});
+
+describe('hueOfHex', () => {
+  it('reads the primaries off the wheel', () => {
+    expect(hueOfHex('#ff0000')).toBe(0);
+    expect(hueOfHex('#00ff00')).toBe(120);
+    expect(hueOfHex('#0000ff')).toBe(240);
+    expect(hueOfHex('#ffff00')).toBe(60);
+  });
+
+  it('refuses a hue for near-grey, where the angle is rounding noise', () => {
+    expect(hueOfHex('#808080')).toBeNull();
+    expect(hueOfHex('#000000')).toBeNull();
+    expect(hueOfHex('#ffffff')).toBeNull();
+    // A tint too faint to read as a colour.
+    expect(hueOfHex('#807f7f')).toBeNull();
+  });
+
+  it('round-trips through toHexColour', () => {
+    expect(toHexColour(156, 107, 64)).toBe('#9c6b40');
+    expect(hueOfHex(toHexColour(156, 107, 64))).toBe(28);
+    expect(toHexColour(-5, 300, 64)).toBe('#00ff40');
   });
 });

@@ -81,6 +81,7 @@ const media: Record<string, MediaAsset> = {
     blurhash: 'LEHV6nWB2yk8',
     dominantColor: '#3a3a3a',
     luminance: 'dark',
+    renditions: null,
     altText: 'De salon van binnen',
     credit: null,
   },
