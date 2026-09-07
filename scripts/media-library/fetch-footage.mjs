@@ -197,24 +197,45 @@ function linearise(channel) {
 }
 
 /**
- * The measured luminance of the same frame `ingest.mjs` will measure, as a number.
+ * The measured luminance of a candidate, arrived at by the SAME route `ingest.mjs` uses.
  *
- * Same second, same 1x1 downscale, same coefficients, same boundary. If these two ever drift the
- * filenames stop describing the manifest, so the duplication is deliberate and small: this script
- * must not import from the ingest, because the ingest is a build step with side effects.
+ * The PNG intermediate is not incidental — it is the whole point. `ingest.mjs` extracts the frame
+ * to a PNG and measures that; measuring the video directly instead gives a systematically HIGHER
+ * number, up to 0.017 on real footage, because the two paths handle YUV range conversion
+ * differently. Measured across 57 clips: every single one read brighter direct than via PNG.
+ *
+ * That is harmless until a clip lands between 0.320 and 0.337. Then the fetch calls it light, files
+ * it as `light-<id>`, the ingest re-measures it dark, and a group finishes one light clip short —
+ * after ninety minutes of transcoding, reported as a coverage gap with nothing pointing at the
+ * cause. That is exactly how `crafts/light (1)` happened.
+ *
+ * So this does not approximate what the ingest will do. It does the identical thing.
  */
 function luminanceValueOf(file) {
-  const raw = execFileSync(
-    FFMPEG,
-    // prettier-ignore
-    ['-hide_banner', '-loglevel', 'error', '-ss', '1', '-i', file, '-frames:v', '1',
-     '-vf', 'scale=1:1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
-    { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1024 * 1024 },
-  );
-  if (raw.length < 3) {
+  const frame = path.join(SOURCES, '.candidate.png');
+  try {
+    execFileSync(
+      FFMPEG,
+      ['-hide_banner', '-loglevel', 'error', '-y', '-ss', '1', '-i', file, '-frames:v', '1', frame],
+      { stdio: ['ignore', 'ignore', 'pipe'] },
+    );
+    const raw = execFileSync(
+      FFMPEG,
+      // prettier-ignore
+      ['-hide_banner', '-loglevel', 'error', '-i', frame, '-frames:v', '1',
+       '-vf', 'scale=1:1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
+      { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1024 * 1024 },
+    );
+    if (raw.length < 3) {
+      return null;
+    }
+    return 0.2126 * linearise(raw[0]) + 0.7152 * linearise(raw[1]) + 0.0722 * linearise(raw[2]);
+  } catch {
+    // An undecodable candidate is not fatal: it is skipped like any that measures into a full slot.
     return null;
+  } finally {
+    rmSync(frame, { force: true });
   }
-  return 0.2126 * linearise(raw[0]) + 0.7152 * linearise(raw[1]) + 0.0722 * linearise(raw[2]);
 }
 
 /** The class the ingest will independently arrive at for the same frame. */
