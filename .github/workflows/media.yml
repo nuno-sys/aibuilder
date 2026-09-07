@@ -80,13 +80,31 @@ jobs:
       # 80 MB ffmpeg binary and leaves Playwright and the four font families behind, which this job
       # has no use for. Five seconds, and it is the exact binary the pipeline is developed against:
       # ffmpeg 7.0.2 static, with libaom-av1, libx264 and libwebp all present.
-      # `working-directory`, not `npm ci --prefix`: --prefix only moves where packages are WRITTEN.
-      # `npm ci` still looks for the lockfile in the current directory, finds the repo root — which
-      # has pnpm-lock.yaml and no package-lock.json — and exits EUSAGE. (`--dry-run` does not
-      # reproduce that, which is how it got past a check once already.)
+      # `npm install`, NOT `npm ci`, and that is the whole point rather than a detail.
+      # `scripts/preview/.gitignore` ignores `package-lock.json`, so the runner checks out that
+      # directory WITHOUT a lockfile — and `npm ci` exists only to install from one. It cannot ever
+      # work here. `--omit=dev` takes the 80 MB ffmpeg binary and leaves Playwright and the four
+      # font families behind, which this job has no use for.
+      #
+      # Verified against a real `git clone` of this repository, which is the only check that would
+      # have caught it: the working tree has a lockfile, so every test run in one passes.
       - name: Install ffmpeg
         working-directory: scripts/preview
-        run: npm ci --omit=dev
+        run: npm install --omit=dev
+
+      # Fail here, loudly, rather than forty minutes later inside a transcode. The encoders are
+      # named because a build missing any one of them produces a library that is silently wrong.
+      - name: Check ffmpeg can do the job
+        run: |
+          FF=scripts/preview/node_modules/ffmpeg-static/ffmpeg
+          "$FF" -hide_banner -version | head -1
+          for codec in libaom-av1 libx264 libwebp; do
+            if ! "$FF" -hide_banner -encoders 2>/dev/null | grep -q " $codec "; then
+              echo "::error::ffmpeg has no $codec encoder — the media pipeline needs it"
+              exit 1
+            fi
+            echo "  $codec ok"
+          done
 
       - name: Check the key is present
         run: |
