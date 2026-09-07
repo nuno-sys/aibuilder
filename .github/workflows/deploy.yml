@@ -1,0 +1,163 @@
+name: Deploy
+
+# WHAT DEPLOYS WHEN, AND WHY IT IS SPLIT IN TWO
+#
+# A push to `main` deploys the four CONTROL-PLANE Workers, in dependency order. The two TENANT-ZONE
+# Workers are `workflow_dispatch` only and never run on a push — `apps/renderer` carries a `*/*`
+# route on the tenant zone, so one bad deploy takes every customer site down at once, and that is
+# not something a merge should be able to do by accident. Deploying them is a decision someone
+# makes, and the `tenant-zone` GitHub Environment is where you attach a required reviewer to it.
+#
+# WHERE CONFIGURATION LIVES — this is the rule that bites if you get it backwards:
+#
+#   · PLAIN VARS  (ENVIRONMENT, APP_ORIGIN, SITES_ROOT_DOMAIN, STRIPE_PRICE_ID, …)
+#     belong in each `apps/<app>/wrangler.jsonc` under `vars`, committed to git.
+#     `wrangler deploy` REPLACES a Worker's plain vars with what the config says, so anything you
+#     type into the dashboard's Variables panel is gone at the next deploy. The config is the
+#     source of truth; the dashboard is a viewer.
+#
+#   · SECRETS  (API keys, HMAC material, Stripe keys)
+#     are set in the dashboard or with `wrangler secret put`, and are NOT touched by a deploy.
+#     They persist across every deploy this workflow runs. They are never in git and never here.
+#
+# The only GitHub secrets this workflow needs are the two below. Everything else lives on the
+# Cloudflare side, which is what keeps the deploy credential the single thing to rotate.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: What to deploy
+        type: choice
+        required: true
+        default: control-plane
+        options:
+          - control-plane # generator -> billing -> api -> app, in that order
+          - marketing
+          - generator
+          - billing
+          - api
+          - app
+          - renderer # tenant zone: `*/*`, every customer site
+          - media # tenant zone
+
+permissions:
+  contents: read
+
+# Never `cancel-in-progress`. Cancelling half of an ordered sequence leaves the control plane with
+# a Worker deployed against a service binding that was rolled forward without it.
+concurrency:
+  group: deploy-${{ github.ref }}
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  WRANGLER_SEND_METRICS: "false"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  # The same three gates CI runs, re-run here against the exact commit being deployed. "CI was green
+  # on this branch at some point" is not the same statement.
+  verify:
+    name: typecheck / lint / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run lint
+      - run: pnpm run test
+
+  control-plane:
+    name: Control plane
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Attach required reviewers or a deployment branch rule here in the repository settings.
+    environment: production
+    if: >-
+      github.event_name == 'push' ||
+      contains(fromJSON('["control-plane","marketing","generator","billing","api","app"]'),
+               github.event.inputs.target)
+    env:
+      # A push deploys the whole control plane; a dispatch deploys exactly what was asked for.
+      TARGET: ${{ github.event_name == 'push' && 'control-plane' || github.event.inputs.target }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # `apps/marketing` and `apps/app` ship static assets that wrangler uploads from a build
+      # directory. Deploying without building first publishes whatever the last build left behind,
+      # or nothing at all.
+      - name: Build
+        run: pnpm run build
+
+      # ORDER IS NOT A PREFERENCE. A service binding cannot name a Worker that does not exist:
+      # billing dispatches the Workflow through the generator, and the API binds both.
+      - name: Deploy generator
+        if: env.TARGET == 'control-plane' || env.TARGET == 'generator'
+        run: pnpm exec wrangler deploy --config apps/generator/wrangler.jsonc
+
+      - name: Deploy billing
+        if: env.TARGET == 'control-plane' || env.TARGET == 'billing'
+        run: pnpm exec wrangler deploy --config apps/billing/wrangler.jsonc
+
+      - name: Deploy api
+        if: env.TARGET == 'control-plane' || env.TARGET == 'api'
+        run: pnpm exec wrangler deploy --config apps/api/wrangler.jsonc
+
+      - name: Deploy app
+        if: env.TARGET == 'control-plane' || env.TARGET == 'app'
+        run: pnpm exec wrangler deploy --config apps/app/wrangler.jsonc
+
+      # Binds nothing on the control plane, so its position is free. Last, because it is the surface
+      # a visitor sees and there is no reason for it to lead.
+      - name: Deploy marketing
+        if: env.TARGET == 'control-plane' || env.TARGET == 'marketing'
+        run: pnpm exec wrangler deploy --config apps/marketing/wrangler.jsonc
+
+  tenant-zone:
+    name: Tenant zone
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # A SECOND environment on purpose. `apps/renderer` holds `*/*` on the tenant zone: every
+    # customer site at once. Put a required reviewer on this one even if `production` has none.
+    environment: tenant-zone
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      contains(fromJSON('["renderer","media"]'), github.event.inputs.target)
+    env:
+      TARGET: ${{ github.event.inputs.target }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Deploy renderer
+        if: env.TARGET == 'renderer'
+        run: pnpm exec wrangler deploy --config apps/renderer/wrangler.jsonc
+
+      - name: Deploy media
+        if: env.TARGET == 'media'
+        run: pnpm exec wrangler deploy --config apps/media/wrangler.jsonc

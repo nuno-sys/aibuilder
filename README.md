@@ -393,17 +393,69 @@ Vitest tests against a seeded and `ANALYZE`d database rather than separate jobs.
 The Lighthouse and contrast gates are present as a commented-out `# Phase 2` job. They measure
 surfaces that do not exist in this delivery, and a gate that cannot fail is worse than no gate.
 
+Deploying is a separate workflow — [`deploy.yml`](.github/workflows/deploy.yml), see
+[Deployment](#deployment). It re-runs the same three gates against the commit it is about to deploy
+rather than trusting that CI was green on this branch at some point.
+
 ## Deployment
 
-There is no `deploy` script and no deploy job in CI, deliberately: with a `*/*` route on the tenant
-zone, a bad deploy takes every customer site down at once. Deploy one Worker at a time, explicitly.
+Deploys run from GitHub Actions: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+
+A push to `main` deploys the **control plane** — generator, billing, api, app, marketing — after
+`typecheck`, `lint` and `test` pass against that exact commit. The **tenant zone** (`renderer`,
+`media`) is `workflow_dispatch` only and a merge can never trigger it: `apps/renderer` carries a
+`*/*` route, so one bad deploy takes every customer site down at once. Actions → Deploy → Run
+workflow, pick the target.
+
+The two jobs use two GitHub Environments, `production` and `tenant-zone`, so a required reviewer can
+sit in front of the tenant zone even when the control plane deploys straight through.
+
+### The two credentials
+
+Repository → Settings → Secrets and variables → Actions:
+
+| GitHub secret           | Where it comes from                                                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CLOUDFLARE_API_TOKEN`  | Cloudflare → My Profile → API Tokens. Scopes: Workers Scripts:Edit, D1:Edit, Workers KV Storage:Edit, Workers R2 Storage:Edit, Queues:Edit, Account Settings:Read. |
+| `CLOUDFLARE_ACCOUNT_ID` | `wrangler whoami`, or the URL of any dashboard page.                                                                                                               |
+
+Nothing else belongs in GitHub. Every application secret lives on the Cloudflare side, which is what
+keeps the deploy credential the single thing to rotate.
+
+### Vars go in git, secrets go in the dashboard
+
+Getting this backwards is the one mistake that looks like it worked:
+
+- **Plain vars** — `ENVIRONMENT`, `APP_ORIGIN`, `DASHBOARD_ORIGIN`, `API_ORIGIN`,
+  `SITES_ROOT_DOMAIN`, `MEDIA_ORIGIN`, `R2_S3_ENDPOINT`, `ANTHROPIC_MODEL`, `STRIPE_PRICE_ID` —
+  belong in each `apps/<app>/wrangler.jsonc` under `vars`, committed. `wrangler deploy` **replaces**
+  a Worker's plain vars with what the config says, so a value typed into the dashboard's Variables
+  panel is gone at the next deploy. The config is the source of truth; the dashboard shows you what
+  the last deploy set.
+- **Secrets** — every API key, HMAC key and Stripe key — are set once in the dashboard (Worker →
+  Settings → Variables and Secrets → _Encrypt_) or with `wrangler secret put`, and are **not**
+  touched by a deploy. They survive every run of this workflow.
+
+### Secrets Store, or plain secrets on the Worker
+
+Four Workers declare their secrets as [Secrets Store](https://developers.cloudflare.com/secrets-store/)
+bindings (`secrets_store_secrets` in their `wrangler.jsonc`): one store, rotatable and auditable
+without a deploy, managed under Account → Secrets Store rather than on the Worker itself.
+
+If you would rather add them on the Worker directly, that works and costs **no code change**: every
+Worker reads through `readSecret()`, which accepts a Secrets Store binding or a plain string
+(`apps/*/src/env.ts`). Delete the `secrets_store_secrets` block from that app's `wrangler.jsonc` and
+add each name as an encrypted secret on the Worker. What you lose is rotation without a deploy and
+one place to audit; what you gain is one fewer resource to create.
+
+### Deploying by hand
+
+Still supported, and the order is not a preference — a service binding cannot name a Worker that
+does not exist yet:
 
 ```bash
-pnpm exec wrangler deploy --config apps/api/wrangler.jsonc
+pnpm exec wrangler deploy --config apps/generator/wrangler.jsonc
 ```
-
-Order matters on a first deploy, because a service binding cannot name a Worker that does not exist
-yet:
 
 ```
 generator  ->  billing  ->  api  ->  app
