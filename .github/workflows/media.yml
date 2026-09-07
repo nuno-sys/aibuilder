@@ -13,9 +13,11 @@ name: Media library
 #
 # WHAT COMES BACK
 #   packages/core/src/media-library/catalogue.generated.ts   the index the Workers bundle
-#   apps/marketing/public/media/hero/**                      the sales page's own header
-#   apps/marketing/src/content/hero-media.generated.ts       its sizes and byte budgets
 # The binaries do NOT: they go straight to R2 under `library/<key>` and are never committed.
+#
+# The marketing header is NOT this workflow's business — `hero.yml` owns it and can replace it in
+# three minutes. If this run also chose a brand clip it would quietly swap out a header someone had
+# just deliberately published, two hours after they published it. Hence `--no-brand`.
 #
 # Committing those three is what makes this automatic end to end — the push triggers Deploy, which
 # rebuilds every Worker against the new catalogue. Nothing to click twice.
@@ -125,19 +127,16 @@ jobs:
           args=()
           if [ -n "${GROUPS}" ]; then args+=("--groups=${GROUPS}"); fi
           if [ "${FORCE}" = "true" ]; then args+=("--force"); fi
-          node scripts/media-library/fetch-footage.mjs "${args[@]}"
+          node scripts/media-library/fetch-footage.mjs --no-brand "${args[@]}"
 
       # Transcodes every clip to every rendition it will ever be served in and MEASURES luminance
       # and hue off the pixels. Exits non-zero when a group cannot dress both a light and a dark
       # site, which is the gate that stops half-filled footage reaching a customer.
       - name: Transcode and measure
-        run: pnpm run media:ingest
+        run: node scripts/media-library/ingest.mjs --no-brand
 
       - name: Emit the catalogue
         run: pnpm run media:catalogue
-
-      - name: Stage the marketing hero
-        run: pnpm run media:marketing
 
       # Before the upload, not after: a catalogue that fails typecheck must not leave bytes behind in
       # R2 under keys nothing will ever reference.
@@ -161,9 +160,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add packages/core/src/media-library/catalogue.generated.ts \
-                  apps/marketing/public/media/hero \
-                  apps/marketing/src/content/hero-media.generated.ts
+          git add packages/core/src/media-library/catalogue.generated.ts
           if git diff --cached --quiet; then
             echo "no change to the catalogue — nothing to commit"
             exit 0

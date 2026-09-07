@@ -166,6 +166,16 @@ const BRAND_QUERIES = [
 const args = new Set(process.argv.slice(2));
 const FORCE = args.has('--force');
 const groupArg = [...args].find((a) => a.startsWith('--groups='));
+
+/**
+ * Leave the marketing header alone.
+ *
+ * `hero.yml` owns the brand clip and can replace it in three minutes. The library run takes two
+ * hours, and if it also fetched `brand` it would choose its OWN brightest candidate and quietly
+ * swap out a header someone had just deliberately published. Two workflows owning one file is the
+ * bug; this flag is where they stop overlapping.
+ */
+const NO_BRAND = args.has('--no-brand');
 const ONLY = groupArg === undefined ? null : new Set(groupArg.slice('--groups='.length).split(','));
 
 const KEY = process.env.PEXELS_KEY ?? '';
@@ -543,7 +553,7 @@ async function main() {
     if (ONLY !== null && !ONLY.has(group)) continue;
     kept += await fill(group, queries, { dark: PER_LUMINANCE, light: PER_LUMINANCE });
   }
-  if (ONLY === null || ONLY.has(BRAND)) {
+  if (!NO_BRAND && (ONLY === null || ONLY.has(BRAND))) {
     kept += await fill(BRAND, BRAND_QUERIES, { light: 1 });
   }
 

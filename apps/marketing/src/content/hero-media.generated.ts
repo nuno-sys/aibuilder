@@ -27,39 +27,43 @@ export interface GeneratedPoster {
 }
 
 export const brandPoster: GeneratedPoster = {
-  "avifSrcset": "/media/hero/header-640.avif 640w, /media/hero/header-960.avif 960w, /media/hero/header-1280.avif 1280w, /media/hero/header-1920.avif 1920w, /media/hero/header-2560.avif 2560w",
-  "webpSrcset": "/media/hero/header-640.webp 640w, /media/hero/header-960.webp 960w, /media/hero/header-1280.webp 1280w, /media/hero/header-1920.webp 1920w, /media/hero/header-2560.webp 2560w",
-  "fallback": "/media/hero/header-2560.webp",
-  "width": 2560,
-  "height": 1440
+  avifSrcset:
+    '/media/hero/header-640.avif 640w, /media/hero/header-960.avif 960w, /media/hero/header-1280.avif 1280w, /media/hero/header-1920.avif 1920w, /media/hero/header-2560.avif 2560w',
+  webpSrcset:
+    '/media/hero/header-640.webp 640w, /media/hero/header-960.webp 960w, /media/hero/header-1280.webp 1280w, /media/hero/header-1920.webp 1920w, /media/hero/header-2560.webp 2560w',
+  fallback: '/media/hero/header-2560.webp',
+  width: 2560,
+  height: 1440,
 };
 
 /** The 9:16 crop. Its rungs are all larger than a phone hero is displayed at — see `hero-media.ts`. */
 export const brandPosterPortrait: GeneratedPoster = {
-  "avifSrcset": "/media/hero/header-p-540.avif 540w, /media/hero/header-p-720.avif 720w, /media/hero/header-p-1080.avif 1080w, /media/hero/header-p-1440.avif 1440w",
-  "webpSrcset": "/media/hero/header-p-540.webp 540w, /media/hero/header-p-720.webp 720w, /media/hero/header-p-1080.webp 1080w, /media/hero/header-p-1440.webp 1440w",
-  "fallback": "/media/hero/header-p-1440.webp",
-  "width": 1440,
-  "height": 3120
+  avifSrcset:
+    '/media/hero/header-p-540.avif 540w, /media/hero/header-p-720.avif 720w, /media/hero/header-p-1080.avif 1080w, /media/hero/header-p-1440.avif 1440w',
+  webpSrcset:
+    '/media/hero/header-p-540.webp 540w, /media/hero/header-p-720.webp 720w, /media/hero/header-p-1080.webp 1080w, /media/hero/header-p-1440.webp 1440w',
+  fallback: '/media/hero/header-p-1440.webp',
+  width: 1440,
+  height: 3120,
 };
 
 export const brandLandscape: GeneratedVideo = {
-  "av1": "/media/hero/header-landscape.av1.webm",
-  "h264": "/media/hero/header-landscape.h264.mp4",
-  "width": 1920,
-  "height": 1080,
-  "maxBytes": 559902
+  av1: '/media/hero/header-landscape.av1.webm',
+  h264: '/media/hero/header-landscape.h264.mp4',
+  width: 1920,
+  height: 1080,
+  maxBytes: 559902,
 };
 
 export const brandPortrait: GeneratedVideo = {
-  "av1": "/media/hero/header-portrait.av1.webm",
-  "h264": "/media/hero/header-portrait.h264.mp4",
-  "width": 720,
-  "height": 1560,
-  "maxBytes": 126435
+  av1: '/media/hero/header-portrait.av1.webm',
+  h264: '/media/hero/header-portrait.h264.mp4',
+  width: 720,
+  height: 1560,
+  maxBytes: 126435,
 };
 
 /** Measured off the pixels, not declared: it decides whether the scrim washes white or black. */
-export const brandLuminance = "light" as const;
+export const brandLuminance = 'light' as const;
 
-export const brandCredit: string | null = "Artem Podrez / Pexels";
+export const brandCredit: string | null = 'Artem Podrez / Pexels';

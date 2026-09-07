@@ -135,6 +135,17 @@ const SYNTHESIZE = args.has('--synthesize');
  */
 const BRAND_ONLY = args.has('--brand-only');
 
+/**
+ * The mirror of `--brand-only`: ingest the fourteen tenant groups and leave the header to `hero.yml`.
+ *
+ * The check below — "no brand clip, the marketing hero has no footage" — was written when one
+ * pipeline owned everything, and it caught a real bug: a hero whose files existed only in a
+ * comment. It still does, but it now belongs to the workflow that actually produces that clip. A
+ * library run has nothing to say about it, and failing a two-hour transcode over a file it was
+ * explicitly told not to fetch is the check firing at the wrong target.
+ */
+const NO_BRAND = args.has('--no-brand');
+
 function ff(argv, capture = false) {
   return execFileSync(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', ...argv], {
     stdio: capture ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'ignore', 'pipe'],
@@ -630,10 +641,10 @@ function main() {
   } else {
     console.log(`coverage: all ${GROUPS.length} groups dressed in both light and dark`);
   }
-  if (brand.length === 0) {
+  if (brand.length === 0 && !NO_BRAND) {
     console.log(
       `no ${BRAND} clip: the marketing hero has no footage. ` +
-        `Add sources/${BRAND}/ or re-run with --synthesize.`,
+        `Add sources/${BRAND}/, re-run with --synthesize, or run the Homepage header workflow.`,
     );
     process.exitCode = 1;
   }

@@ -17,6 +17,7 @@
  *
  *   node scripts/media-library/stage-marketing.mjs
  */
+import { execFileSync } from 'node:child_process';
 import {
   copyFileSync,
   existsSync,
@@ -147,6 +148,7 @@ export const brandCredit: string | null = ${JSON.stringify(clip.credit ?? null)}
 `;
 
 writeFileSync(TARGET, module);
+format(TARGET);
 
 const total = landscape.maxBytes + portrait.maxBytes;
 console.log(
@@ -154,3 +156,23 @@ console.log(
     `(${Math.round(landscape.maxBytes / 1024)} kB landscape + ${Math.round(portrait.maxBytes / 1024)} kB portrait ` +
     `= ${Math.round(total / 1024)} kB) and ${path.relative(ROOT, TARGET)}`,
 );
+
+/**
+ * Formats a generated file with the repository's own prettier.
+ *
+ * Without this the file lands in git as raw `JSON.stringify` output — double-quoted keys, no
+ * trailing commas — and `pnpm format:check` fails on a file nobody wrote by hand. It only ever
+ * passed before because a human ran `pnpm format` afterwards; a workflow does not, and commits the
+ * unformatted version. Missing prettier is not fatal: the file is still correct, just ugly.
+ */
+function format(file) {
+  const prettier = path.join(ROOT, 'node_modules/.bin/prettier');
+  if (!existsSync(prettier)) {
+    return;
+  }
+  try {
+    execFileSync(prettier, ['--write', file], { stdio: 'ignore' });
+  } catch {
+    // A formatting failure must not lose the generated file that is already written.
+  }
+}
