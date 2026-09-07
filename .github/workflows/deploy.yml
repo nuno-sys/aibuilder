@@ -1,53 +1,38 @@
 name: Deploy
 
-# WHAT DEPLOYS WHEN, AND WHY IT IS SPLIT IN TWO
+# Push to `main` and every Worker goes live. Nothing to click.
 #
-# A push to `main` deploys the four CONTROL-PLANE Workers, in dependency order. The two TENANT-ZONE
-# Workers are `workflow_dispatch` only and never run on a push — `apps/renderer` carries a `*/*`
-# route on the tenant zone, so one bad deploy takes every customer site down at once, and that is
-# not something a merge should be able to do by accident. Deploying them is a decision someone
-# makes, and the `tenant-zone` GitHub Environment is where you attach a required reviewer to it.
+# THE ORDER IS NOT A PREFERENCE. A service binding cannot name a Worker that does not exist yet:
+# billing dispatches the Workflow through the generator, and the API binds both. On a first deploy,
+# out of order, the API and billing simply fail. This is also why the whole estate is one job rather
+# than seven parallel ones — Cloudflare's own Git integration fires them all at once, which cannot
+# express this constraint.
 #
-# WHERE CONFIGURATION LIVES — this is the rule that bites if you get it backwards:
+# THE TENANT ZONE DEPLOYS AUTOMATICALLY TOO, and that is a decision worth knowing you made:
+# `apps/renderer` carries a `*/*` route, so it serves every customer site and a bad deploy takes all
+# of them down together. What stands between a bad commit and that outcome is the `verify` job — the
+# same typecheck, lint and test run against this exact commit — and the fact that the tenant zone
+# goes last, after the control plane has already deployed cleanly. If you ever want a human in that
+# loop, give the deploy job `environment: tenant-zone` and add a required reviewer to it.
 #
-#   · PLAIN VARS  (ENVIRONMENT, APP_ORIGIN, SITES_ROOT_DOMAIN, STRIPE_PRICE_ID, …)
-#     belong in each `apps/<app>/wrangler.jsonc` under `vars`, committed to git.
-#     `wrangler deploy` REPLACES a Worker's plain vars with what the config says, so anything you
-#     type into the dashboard's Variables panel is gone at the next deploy. The config is the
-#     source of truth; the dashboard is a viewer.
-#
-#   · SECRETS  (API keys, HMAC material, Stripe keys)
-#     are set in the dashboard or with `wrangler secret put`, and are NOT touched by a deploy.
-#     They persist across every deploy this workflow runs. They are never in git and never here.
-#
-# The only GitHub secrets this workflow needs are the two below. Everything else lives on the
-# Cloudflare side, which is what keeps the deploy credential the single thing to rotate.
+# WHERE CONFIGURATION LIVES:
+#   · repository SECRETS  — CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID. Nothing else.
+#   · repository VARIABLES — TURNSTILE_SITE_KEY, STRIPE_PRICE_ID, INDEXNOW_KEY. Not secret: the
+#     site key is rendered into the widget, the price is quoted on the pricing page, and the
+#     IndexNow key is served at `/<key>.txt` by definition.
+#   · Worker SECRETS (Anthropic, Stripe, HMAC keys) are set once in the Cloudflare dashboard and are
+#     never touched by a deploy. Plain vars in `wrangler.jsonc` are, so they belong in git.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      target:
-        description: What to deploy
-        type: choice
-        required: true
-        default: control-plane
-        options:
-          - control-plane # generator -> billing -> api -> app, in that order
-          - marketing
-          - generator
-          - billing
-          - api
-          - app
-          - renderer # tenant zone: `*/*`, every customer site
-          - media # tenant zone
 
 permissions:
   contents: read
 
-# Never `cancel-in-progress`. Cancelling half of an ordered sequence leaves the control plane with
-# a Worker deployed against a service binding that was rolled forward without it.
+# Never `cancel-in-progress`. Cancelling half of an ordered sequence leaves the control plane with a
+# Worker rolled forward past a service binding that was not.
 concurrency:
   group: deploy-${{ github.ref }}
 
@@ -57,8 +42,8 @@ env:
   DO_NOT_TRACK: "1"
 
 jobs:
-  # The same three gates CI runs, re-run here against the exact commit being deployed. "CI was green
-  # on this branch at some point" is not the same statement.
+  # The same three gates CI runs, against the exact commit being deployed. "CI was green on this
+  # branch at some point" is a different statement, and a weaker one.
   verify:
     name: typecheck / lint / test
     runs-on: ubuntu-latest
@@ -75,22 +60,17 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run test
 
-  control-plane:
-    name: Control plane
+  deploy:
+    name: Deploy every Worker
     needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # Attach required reviewers or a deployment branch rule here in the repository settings.
-    environment: production
-    if: >-
-      github.event_name == 'push' ||
-      contains(fromJSON('["control-plane","marketing","generator","billing","api","app"]'),
-               github.event.inputs.target)
+    timeout-minutes: 30
     env:
-      # A push deploys the whole control plane; a dispatch deploys exactly what was asked for.
-      TARGET: ${{ github.event_name == 'push' && 'control-plane' || github.event.inputs.target }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+      STRIPE_PRICE_ID: ${{ vars.STRIPE_PRICE_ID }}
+      INDEXNOW_KEY: ${{ vars.INDEXNOW_KEY }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -100,64 +80,42 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # Creates anything missing and fills the ids into this checkout — NOT into git. The ids are
+      # read back from the account every run, so they are identical every time; keeping them out of
+      # the repository means no commit step, no PR to merge, and no resource identifiers in history.
+      # Idempotent by construction: everything is listed before it is created.
+      - name: Provision Cloudflare resources
+        run: node scripts/cloudflare/bootstrap.mjs
+
       # `apps/marketing` and `apps/app` ship static assets that wrangler uploads from a build
-      # directory. Deploying without building first publishes whatever the last build left behind,
-      # or nothing at all.
+      # directory. Deploying without building first publishes whatever was there before, or nothing.
       - name: Build
         run: pnpm run build
 
-      # ORDER IS NOT A PREFERENCE. A service binding cannot name a Worker that does not exist:
-      # billing dispatches the Workflow through the generator, and the API binds both.
       - name: Deploy generator
-        if: env.TARGET == 'control-plane' || env.TARGET == 'generator'
         run: pnpm exec wrangler deploy --config apps/generator/wrangler.jsonc
-
       - name: Deploy billing
-        if: env.TARGET == 'control-plane' || env.TARGET == 'billing'
         run: pnpm exec wrangler deploy --config apps/billing/wrangler.jsonc
-
       - name: Deploy api
-        if: env.TARGET == 'control-plane' || env.TARGET == 'api'
         run: pnpm exec wrangler deploy --config apps/api/wrangler.jsonc
-
       - name: Deploy app
-        if: env.TARGET == 'control-plane' || env.TARGET == 'app'
         run: pnpm exec wrangler deploy --config apps/app/wrangler.jsonc
-
-      # Binds nothing on the control plane, so its position is free. Last, because it is the surface
-      # a visitor sees and there is no reason for it to lead.
       - name: Deploy marketing
-        if: env.TARGET == 'control-plane' || env.TARGET == 'marketing'
         run: pnpm exec wrangler deploy --config apps/marketing/wrangler.jsonc
 
-  tenant-zone:
-    name: Tenant zone
-    needs: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # A SECOND environment on purpose. `apps/renderer` holds `*/*` on the tenant zone: every
-    # customer site at once. Put a required reviewer on this one even if `production` has none.
-    environment: tenant-zone
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      contains(fromJSON('["renderer","media"]'), github.event.inputs.target)
-    env:
-      TARGET: ${{ github.event.inputs.target }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-
+      # The tenant zone, last and on its own: `renderer` holds `*/*` over every customer site.
       - name: Deploy renderer
-        if: env.TARGET == 'renderer'
         run: pnpm exec wrangler deploy --config apps/renderer/wrangler.jsonc
-
       - name: Deploy media
-        if: env.TARGET == 'media'
         run: pnpm exec wrangler deploy --config apps/media/wrangler.jsonc
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '### Deployed'
+            echo
+            echo 'generator → billing → api → app → marketing → renderer → media'
+            echo
+            echo "Commit: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

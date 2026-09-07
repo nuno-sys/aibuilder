@@ -148,18 +148,12 @@ under `onlyBuiltDependencies` in [`pnpm-workspace.yaml`](pnpm-workspace.yaml).
 > **Settle [open question 1](#open-questions) — the control-plane domain — before you start.** It
 > cannot be retrofitted once tenant slugs are indexed.
 
-### The short way: run it from GitHub
+### You probably do not need this section
 
-Put `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the repository's Actions secrets, then
-Actions → **Bootstrap Cloudflare** → Run workflow. It creates every resource the wrangler configs
-bind — reading the list out of the configs themselves, so it cannot drift from what the code
-expects — and opens a PR with the 27 ids filled in. `dry_run` is the default and prints the plan
-without touching the account; it is safe to run twice, because every resource is listed before it is
-created and the id is always read back.
-
-It does not create secrets (values, not resources), zones (a nameserver change at your registrar) or
-migrations (`pnpm migrate:*:remote` is where forward-only starts, and that is a decision, not a side
-effect). Steps 6, 7 and 9 below are still yours.
+`deploy.yml` provisions everything on Cloudflare before it builds, on every push. The steps below
+are the same commands run by hand, for when you want to watch each one land — or to create the
+resources ahead of the first deploy so that deploy has less to do. Steps 6, 7 and 9 (secrets and
+migrations) are not automated either way.
 
 ### The long way, by hand
 
@@ -419,51 +413,59 @@ rather than trusting that CI was green on this branch at some point.
 
 ## Deployment
 
-Deploys run from GitHub Actions: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+Push to `main` and every Worker goes live. There is nothing to click.
 
-A push to `main` deploys the **control plane** — generator, billing, api, app, marketing — after
-`typecheck`, `lint` and `test` pass against that exact commit.
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs `typecheck`, `lint` and `test`
+against that exact commit, provisions anything missing on Cloudflare, builds, and deploys all seven
+Workers in dependency order:
 
-The two jobs use two GitHub Environments, `production` and `tenant-zone`, so a required reviewer can
-sit in front of the tenant zone even when the control plane deploys straight through.
+```
+generator -> billing -> api -> app -> marketing -> renderer -> media
+```
 
-### The two credentials
+The order is not a preference. A service binding cannot name a Worker that does not exist yet:
+billing dispatches the Workflow through the generator, and the API binds both. That is also why this
+is one sequential job rather than seven parallel ones — Cloudflare's own Git integration fires every
+connected Worker at once, which cannot express the constraint. Use one or the other, never both, or
+two systems race to deploy the same script.
 
-Repository → Settings → Secrets and variables → Actions:
+**The tenant zone deploys automatically too**, and that is worth knowing you decided. `apps/renderer`
+carries a `*/*` route, so it serves every customer site and a bad deploy takes all of them down
+together. Between a bad commit and that outcome stand the `verify` job and the fact that the tenant
+zone goes last, after the control plane has deployed cleanly. To put a human in that loop, give the
+deploy job `environment: tenant-zone` and add a required reviewer to it in the repository settings.
 
-| GitHub secret           | Where it comes from                                                                                                                                                |
+### What you set, once
+
+Repository → Settings → Secrets and variables → Actions.
+
+**Secrets** — two, and nothing else:
+
+| Secret                  | Where it comes from                                                                                                                                                |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `CLOUDFLARE_API_TOKEN`  | Cloudflare → My Profile → API Tokens. Scopes: Workers Scripts:Edit, D1:Edit, Workers KV Storage:Edit, Workers R2 Storage:Edit, Queues:Edit, Account Settings:Read. |
 | `CLOUDFLARE_ACCOUNT_ID` | `wrangler whoami`, or the URL of any dashboard page.                                                                                                               |
 
-Nothing else belongs in GitHub. Every application secret lives on the Cloudflare side, which is what
-keeps the deploy credential the single thing to rotate.
+**Variables** — three, none of them secret. The Turnstile site key is rendered into the widget, the
+Stripe price is quoted on the pricing page, and the IndexNow key is served at `/<key>.txt` by
+definition:
 
-### Vars go in git, secrets go in the dashboard
+`TURNSTILE_SITE_KEY`, `STRIPE_PRICE_ID`, `INDEXNOW_KEY`.
 
-Getting this backwards is the one mistake that looks like it worked:
+**Worker secrets** — the Anthropic key, the Stripe keys, the HMAC material — are set once in the
+Cloudflare dashboard (Worker → Settings → Variables and Secrets → _Encrypt_) and are never touched
+by a deploy. Plain vars in `wrangler.jsonc` are replaced on every deploy, which is why they belong
+in git and not in the dashboard.
 
-- **Plain vars** — `ENVIRONMENT`, `APP_ORIGIN`, `DASHBOARD_ORIGIN`, `API_ORIGIN`,
-  `SITES_ROOT_DOMAIN`, `MEDIA_ORIGIN`, `R2_S3_ENDPOINT`, `ANTHROPIC_MODEL`, `STRIPE_PRICE_ID` —
-  belong in each `apps/<app>/wrangler.jsonc` under `vars`, committed. `wrangler deploy` **replaces**
-  a Worker's plain vars with what the config says, so a value typed into the dashboard's Variables
-  panel is gone at the next deploy. The config is the source of truth; the dashboard shows you what
-  the last deploy set.
-- **Secrets** — every API key, HMAC key and Stripe key — are set once in the dashboard (Worker →
-  Settings → Variables and Secrets → _Encrypt_) or with `wrangler secret put`, and are **not**
-  touched by a deploy. They survive every run of this workflow.
+### Resource ids never enter git
 
-### Secrets Store, or plain secrets on the Worker
+The deploy provisions Cloudflare before it builds, and writes the ids into that checkout only. They
+are read back from the account every run, so they are identical every time — which means no commit
+step, no PR to merge, and no resource identifiers in the repository's history. The configs keep
+their `REPLACE_WITH_REAL_ID` placeholders, and a missing one is reported rather than shipped.
 
-Four Workers declare their secrets as [Secrets Store](https://developers.cloudflare.com/secrets-store/)
-bindings (`secrets_store_secrets` in their `wrangler.jsonc`): one store, rotatable and auditable
-without a deploy, managed under Account → Secrets Store rather than on the Worker itself.
-
-If you would rather add them on the Worker directly, that works and costs **no code change**: every
-Worker reads through `readSecret()`, which accepts a Secrets Store binding or a plain string
-(`apps/*/src/env.ts`). Delete the `secrets_store_secrets` block from that app's `wrangler.jsonc` and
-add each name as an encrypted secret on the Worker. What you lose is rotation without a deploy and
-one place to audit; what you gain is one fewer resource to create.
+[`bootstrap.yml`](.github/workflows/bootstrap.yml) runs the same script read-only, so you can see
+the plan and confirm which account you are pointed at before the first deploy.
 
 ### Deploying by hand
 

@@ -1,27 +1,13 @@
-name: Bootstrap Cloudflare
+name: Bootstrap Cloudflare (preview)
 
-# Creates every Cloudflare resource the wrangler configs bind, then opens a PR with the ids filled
-# in. Run it once, from the Actions tab, before the first deploy.
+# A read-only look at what the deploy will provision.
 #
-# WHY THIS EXISTS AS A WORKFLOW RATHER THAN A LOCAL SCRIPT. The credential is the point. A token
-# with D1:Edit and R2:Edit can create and destroy the whole account's state, and this way it lives
-# in exactly one place — GitHub's encrypted secrets — instead of on a laptop, in a shell history,
-# or pasted into a chat. Nobody can read it back out, including whoever added it.
+# The real bootstrap runs inside `deploy.yml` on every push: it creates anything missing and fills
+# the ids into that checkout, never into git. This workflow exists so you can see the plan — and
+# confirm which account you are pointed at — before the first deploy touches anything.
 #
-# IT IS SAFE TO RUN TWICE. Every resource is listed before it is created and the id is always read
-# back from the account, so a second run over a half-finished bootstrap finishes it. `dry_run` is
-# the default: it prints exactly what it would create and touches nothing.
-#
-# WHAT IT DOES NOT DO, and each for its own reason:
-#   · secrets — values, not resources. Worker -> Settings -> Variables and Secrets -> Encrypt.
-#   · zones and DNS — adding a domain needs a nameserver change at your registrar.
-#   · migrations — `pnpm migrate:*:remote` is where "forward-only" starts. That is a decision made
-#     after reading the SQL, not a side effect of provisioning.
-#
-# THE ONE-WAY DOORS IT WALKS THROUGH. D1 and R2 both fix `--jurisdiction` at creation and neither
-# has a move API; R2's jurisdiction also changes the S3 endpoint host, which is covered by the
-# presigning signature. The script passes `eu` for both. If you want a different residency, change
-# it in `scripts/cloudflare/bootstrap.mjs` BEFORE the first non-dry run, not after.
+# It defaults to a dry run and creating resources here is optional: because the bootstrap is
+# idempotent, running it for real just means the first deploy has less to do.
 
 on:
   workflow_dispatch:
@@ -32,19 +18,22 @@ on:
         default: true
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: bootstrap
 
 jobs:
   bootstrap:
-    name: Create resources
+    name: Show the plan
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Put a required reviewer here. This job can create billable, immutable resources.
-    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+      STRIPE_PRICE_ID: ${{ vars.STRIPE_PRICE_ID }}
+      INDEXNOW_KEY: ${{ vars.INDEXNOW_KEY }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -55,15 +44,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Confirm the account
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm exec wrangler whoami
 
       - name: Bootstrap
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           node scripts/cloudflare/bootstrap.mjs \
             ${{ inputs.dry_run && '--dry-run' || '' }} | tee bootstrap.log
@@ -77,16 +60,3 @@ jobs:
             cat bootstrap.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-
-      # A PR rather than a push to `main`: the ids are configuration, and configuration that lands
-      # without anyone looking is how a placeholder survives to production.
-      - name: Open a PR with the ids
-        if: ${{ !inputs.dry_run }}
-        uses: peter-evans/create-pull-request@v7
-        with:
-          branch: chore/cloudflare-ids
-          commit-message: "chore: fill the Cloudflare resource ids from the bootstrap"
-          title: "chore: Cloudflare resource ids"
-          body-path: bootstrap.log
-          add-paths: apps/*/wrangler.jsonc
-          delete-branch: true

@@ -231,7 +231,11 @@ function resolvePlaceholders(file, ids) {
     else if (/"id":/u.test(line) && binding !== null) value = ids.kv[binding];
     else if (/"store_id":/u.test(line)) value = ids.secretsStore;
     else if (/"R2_S3_ENDPOINT":/u.test(line)) value = ids.accountId;
-    else owned = false;
+    else {
+      const named = /"([A-Z_]+)":\s*"REPLACE_WITH_REAL_ID"/u.exec(line)?.[1];
+      if (named !== undefined && named in ids.values) value = ids.values[named];
+      else owned = false;
+    }
 
     if (!owned) {
       foreign.push(line.trim());
@@ -262,7 +266,22 @@ if (accountId === null) {
   console.log('CLOUDFLARE_ACCOUNT_ID is not set — R2_S3_ENDPOINT will keep its placeholder.\n');
 }
 
-const ids = { d1: {}, kv: {}, secretsStore: null, accountId };
+/**
+ * Placeholders that are VALUES rather than resources — nothing to create, only to carry.
+ *
+ * They are not secrets: the Turnstile site key is rendered into the widget, the Stripe price is
+ * quoted on the pricing page, and the IndexNow key is served at `/<key>.txt` by definition. So they
+ * are repository VARIABLES rather than repository secrets, and this is where they land in the
+ * config. A missing one leaves its placeholder and is reported, which fails loudly at the surface
+ * that needs it instead of silently shipping the literal string.
+ */
+const values = {
+  TURNSTILE_SITE_KEY: process.env['TURNSTILE_SITE_KEY'] ?? null,
+  STRIPE_PRICE_ID: process.env['STRIPE_PRICE_ID'] ?? null,
+  INDEXNOW_KEY: process.env['INDEXNOW_KEY'] ?? null,
+};
+
+const ids = { d1: {}, kv: {}, secretsStore: null, accountId, values };
 const report = [];
 
 for (const name of want.d1) {
@@ -318,14 +337,18 @@ for (const app of readdirSync(APPS)) {
   for (const line of result.foreign) foreign.push(`${app}: ${line}`);
   if (result.changed > 0) {
     console.log(
-      `\n  ${path.relative(ROOT, file)}: ${String(result.changed)} placeholder(s) filled`,
+      `  ${path.relative(ROOT, file)}: ${String(result.changed)} placeholder(s) ` +
+        `${DRY_RUN ? 'would be filled' : 'filled'}`,
     );
   }
 }
 
+// In a dry run the resource ids were never fetched, so every one of them lands in `unresolved`.
+// That is the plan rather than a problem — but the VALUES resolve either way, so the honest total
+// is both halves added together.
 console.log(
-  `\n${DRY_RUN ? 'would fill' : 'filled'} ${String(DRY_RUN ? unresolved.length : patched)} ` +
-    'resource placeholder(s)',
+  `\n${DRY_RUN ? 'would fill' : 'filled'} ` +
+    `${String(DRY_RUN ? unresolved.length + patched : patched)} placeholder(s)`,
 );
 
 // In a dry run every owned placeholder lands in `unresolved`, because no id was fetched. That is
