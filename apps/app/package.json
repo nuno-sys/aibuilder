@@ -5,11 +5,12 @@
   "type": "module",
   "description": "The customer dashboard and live site editor: React Router v7 in framework mode on Workers, plus SiteDraftDO and the preview origin.",
   "scripts": {
-    "dev": "vite dev",
+    "dev": "vite build --watch & wrangler dev",
     "build": "vite build",
     "deploy": "vite build && wrangler deploy",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev:ui": "vite dev"
   },
   "dependencies": {
     "@aibuilder/auth": "workspace:*",
@@ -25,7 +26,6 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.0.0",
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260906.1",
     "@react-router/dev": "^7.0.0",

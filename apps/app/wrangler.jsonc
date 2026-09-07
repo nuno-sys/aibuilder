@@ -22,7 +22,7 @@
   // ================================================================================================
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "aibuilder-app",
-  "main": "workers/app.ts",
+  "main": "dist/server/index.js",
   // Pinned to 2026-08-22, the newest date the bundled workerd accepts. The test pool and production
   // must run the SAME date or the suite stops proving anything about what deploys.
   "compatibility_date": "2026-08-22",
