@@ -40,8 +40,20 @@ const FFMPEG = path.join(ROOT, 'scripts/preview/node_modules/ffmpeg-static/ffmpe
 
 /** The 14 groups. Must stay equal to `INDUSTRY_GROUPS` — `check.mjs` asserts it. */
 const GROUPS = [
-  'food_drink', 'beauty', 'health', 'sport', 'trades', 'automotive', 'retail',
-  'professional', 'events', 'education', 'real_estate', 'travel', 'pets', 'crafts',
+  'food_drink',
+  'beauty',
+  'health',
+  'sport',
+  'trades',
+  'automotive',
+  'retail',
+  'professional',
+  'events',
+  'education',
+  'real_estate',
+  'travel',
+  'pets',
+  'crafts',
 ];
 
 /**
@@ -77,7 +89,10 @@ function ff(argv, capture = false) {
 
 /** The average colour of a source's first frame, as `#rrggbb`. Measured, never declared. */
 function averageColour(input) {
-  const raw = ff(['-i', input, '-frames:v', '1', '-vf', 'scale=1:1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], true);
+  const raw = ff(
+    ['-i', input, '-frames:v', '1', '-vf', 'scale=1:1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
+    true,
+  );
   const part = (value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0');
   return `#${part(raw[0])}${part(raw[1])}${part(raw[2])}`;
 }
@@ -99,8 +114,12 @@ function measure(hex) {
       ? 'light'
       : 'dark';
 
-  const rn = r / 255, gn = g / 255, bn = b / 255;
-  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn), delta = max - min;
+  const rn = r / 255,
+    gn = g / 255,
+    bn = b / 255;
+  const max = Math.max(rn, gn, bn),
+    min = Math.min(rn, gn, bn),
+    delta = max - min;
   const lightness = (max + min) / 2;
   const saturation = delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1) || Number.EPSILON);
   let hue = null;
@@ -133,18 +152,62 @@ function encodeVideo(input, group, name) {
     const scale = `scale=${target.width}:${target.height}:force_original_aspect_ratio=increase,crop=${target.width}:${target.height},fps=${FPS},format=yuv420p`;
 
     if (!fresh(av1File)) {
-      ff(['-i', input, '-t', String(DURATION), '-vf', scale, '-an',
-        '-c:v', 'libaom-av1', '-crf', String(target.av1Crf), '-b:v', '0',
-        '-cpu-used', '8', '-row-mt', '1', '-g', String(FPS * 2), av1File]);
+      ff([
+        '-i',
+        input,
+        '-t',
+        String(DURATION),
+        '-vf',
+        scale,
+        '-an',
+        '-c:v',
+        'libaom-av1',
+        '-crf',
+        String(target.av1Crf),
+        '-b:v',
+        '0',
+        '-cpu-used',
+        '8',
+        '-row-mt',
+        '1',
+        '-g',
+        String(FPS * 2),
+        av1File,
+      ]);
     }
     if (!fresh(h264File)) {
-      ff(['-i', input, '-t', String(DURATION), '-vf', scale, '-an',
-        '-c:v', 'libx264', '-profile:v', 'high', '-level', '4.0',
-        '-crf', String(target.h264Crf), '-preset', 'medium', '-tune', 'film',
-        '-g', String(FPS * 2), '-movflags', '+faststart', h264File]);
+      ff([
+        '-i',
+        input,
+        '-t',
+        String(DURATION),
+        '-vf',
+        scale,
+        '-an',
+        '-c:v',
+        'libx264',
+        '-profile:v',
+        'high',
+        '-level',
+        '4.0',
+        '-crf',
+        String(target.h264Crf),
+        '-preset',
+        'medium',
+        '-tune',
+        'film',
+        '-g',
+        String(FPS * 2),
+        '-movflags',
+        '+faststart',
+        h264File,
+      ]);
     }
     renditions[target.role] = {
-      av1Key, h264Key, width: target.width, height: target.height,
+      av1Key,
+      h264Key,
+      width: target.width,
+      height: target.height,
       maxBytes: Math.max(statSync(av1File).size, statSync(h264File).size),
     };
   }
@@ -161,19 +224,50 @@ function encodeVideo(input, group, name) {
 function encodeStill(input, kind, group, name) {
   const dir = path.join(OUT, kind, group);
   mkdirSync(dir, { recursive: true });
-  const probe = ff(['-i', input, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], true);
+  const probe = ff(
+    ['-i', input, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
+    true,
+  );
   void probe;
   const widths = [];
   for (const width of POSTER_WIDTHS) {
     const avif = path.join(OUT, `${kind}/${group}/${name}-${width}.avif`);
     const webp = path.join(OUT, `${kind}/${group}/${name}-${width}.webp`);
     if (!fresh(avif)) {
-      ff(['-i', input, '-frames:v', '1', '-vf', `scale=${width}:-2:flags=lanczos`,
-        '-c:v', 'libaom-av1', '-crf', '32', '-cpu-used', '8', '-still-picture', '1', avif]);
+      ff([
+        '-i',
+        input,
+        '-frames:v',
+        '1',
+        '-vf',
+        `scale=${width}:-2:flags=lanczos`,
+        '-c:v',
+        'libaom-av1',
+        '-crf',
+        '32',
+        '-cpu-used',
+        '8',
+        '-still-picture',
+        '1',
+        avif,
+      ]);
     }
     if (!fresh(webp)) {
-      ff(['-i', input, '-frames:v', '1', '-vf', `scale=${width}:-2:flags=lanczos`,
-        '-c:v', 'libwebp', '-quality', '74', '-compression_level', '6', webp]);
+      ff([
+        '-i',
+        input,
+        '-frames:v',
+        '1',
+        '-vf',
+        `scale=${width}:-2:flags=lanczos`,
+        '-c:v',
+        'libwebp',
+        '-quality',
+        '74',
+        '-compression_level',
+        '6',
+        webp,
+      ]);
     }
     widths.push(width);
   }
@@ -213,8 +307,14 @@ function posterFrameOf(input, group, name) {
  * `sources/` and re-running; nothing else changes.
  */
 const SYNTH = {
-  dark: [['0x101014', '0x1d2233', '0x4d6ea8'], ['0x14100f', '0x2a1c19', '0xa8603d']],
-  light: [['0xf4f6fa', '0xdfe6f0', '0x6f8fb8'], ['0xfaf6ef', '0xecdcc8', '0xc08a52']],
+  dark: [
+    ['0x101014', '0x1d2233', '0x4d6ea8'],
+    ['0x14100f', '0x2a1c19', '0xa8603d'],
+  ],
+  light: [
+    ['0xf4f6fa', '0xdfe6f0', '0x6f8fb8'],
+    ['0xfaf6ef', '0xecdcc8', '0xc08a52'],
+  ],
 };
 
 function synthesize() {
@@ -228,18 +328,36 @@ function synthesize() {
         const file = path.join(dir, `${name}.mp4`);
         if (!fresh(file)) {
           const colours = stops.map((hex, i) => `c${i}=${hex}`).join(':');
-          ff(['-f', 'lavfi', '-i',
+          ff([
+            '-f',
+            'lavfi',
+            '-i',
             `gradients=s=1920x1080:${colours}:nb_colors=${stops.length}:type=${index === 0 ? 'radial' : 'linear'}:speed=0.015:r=${FPS}:d=${DURATION},format=yuv420p`,
-            '-an', '-c:v', 'libx264', '-crf', '20', '-preset', 'veryfast', file]);
+            '-an',
+            '-c:v',
+            'libx264',
+            '-crf',
+            '20',
+            '-preset',
+            'veryfast',
+            file,
+          ]);
           made += 1;
         }
         const sidecar = path.join(dir, `${name}.json`);
         if (!existsSync(sidecar)) {
-          writeFileSync(sidecar, JSON.stringify({
-            description: `Plaatshouder — abstracte ${luminance === 'dark' ? 'donkere' : 'lichte'} achtergrond voor ${group}`,
-            credit: null,
-            placeholder: true,
-          }, null, 2) + '\n');
+          writeFileSync(
+            sidecar,
+            JSON.stringify(
+              {
+                description: `Plaatshouder — abstracte ${luminance === 'dark' ? 'donkere' : 'lichte'} achtergrond voor ${group}`,
+                credit: null,
+                placeholder: true,
+              },
+              null,
+              2,
+            ) + '\n',
+          );
         }
       });
     }
@@ -253,13 +371,17 @@ function ingest() {
   const videos = [];
   const images = [];
   if (!existsSync(SOURCES)) {
-    console.log(`no sources at ${path.relative(ROOT, SOURCES)} — run with --synthesize to generate stand-ins`);
+    console.log(
+      `no sources at ${path.relative(ROOT, SOURCES)} — run with --synthesize to generate stand-ins`,
+    );
     return { videos, images };
   }
 
   for (const group of readdirSync(SOURCES).filter((d) => GROUPS.includes(d))) {
     const dir = path.join(SOURCES, group);
-    for (const file of readdirSync(dir).filter((f) => /\.(mp4|mov|webm)$/i.test(f)).sort()) {
+    for (const file of readdirSync(dir)
+      .filter((f) => /\.(mp4|mov|webm)$/i.test(f))
+      .sort()) {
       const name = file.replace(/\.[^.]+$/, '');
       const input = path.join(dir, file);
       const sidecarPath = path.join(dir, `${name}.json`);
