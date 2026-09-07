@@ -422,10 +422,20 @@ rather than trusting that CI was green on this branch at some point.
 Deploys run from GitHub Actions: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 
 A push to `main` deploys the **control plane** — generator, billing, api, app, marketing — after
-`typecheck`, `lint` and `test` pass against that exact commit. The **tenant zone** (`renderer`,
-`media`) is `workflow_dispatch` only and a merge can never trigger it: `apps/renderer` carries a
-`*/*` route, so one bad deploy takes every customer site down at once. Actions → Deploy → Run
-workflow, pick the target.
+`typecheck`, `lint` and `test` pass against that exact commit.
+
+> **The dashboard does not deploy today.** `apps/app`'s production build fails:
+> `@cloudflare/vite-plugin` appends its virtual worker entry to the input array React Router has
+> already populated, and both Rollup and Rolldown reject the mixed array. Bisected across plugin
+> 1.49–1.54.5, React Router 7.13–7.18.3 and Vite 7 and 8 — all fail identically, so it is upstream,
+> not configuration. `reactRouter()` alone builds; `cloudflare()` alone builds; only the pair fails.
+>
+> The workflow treats that one build as allowed-to-fail so an unrelated upstream bug cannot block
+> deploys of the API, billing and the generator, and reports the skip in the run summary. The other
+> six Workers all pass `wrangler deploy --dry-run`. The **tenant zone** (`renderer`,
+> `media`) is `workflow_dispatch` only and a merge can never trigger it: `apps/renderer` carries a
+> `*/*` route, so one bad deploy takes every customer site down at once. Actions → Deploy → Run
+> workflow, pick the target.
 
 The two jobs use two GitHub Environments, `production` and `tenant-zone`, so a required reviewer can
 sit in front of the tenant zone even when the control plane deploys straight through.

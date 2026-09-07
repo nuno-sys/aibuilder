@@ -103,8 +103,23 @@ jobs:
       # `apps/marketing` and `apps/app` ship static assets that wrangler uploads from a build
       # directory. Deploying without building first publishes whatever the last build left behind,
       # or nothing at all.
-      - name: Build
-        run: pnpm run build
+      - name: Build marketing
+        run: pnpm --filter @aibuilder/marketing build
+
+      # THE DASHBOARD BUILD IS ALLOWED TO FAIL, AND ONLY THIS ONE.
+      #
+      # `@cloudflare/vite-plugin` appends its virtual worker entry to the input array React Router
+      # has already populated, and both Rollup and Rolldown reject the mixed array. Every plugin
+      # release from 1.49 to 1.54.5 and every React Router release from 7.13 to 7.18.3 fails the
+      # same way, on Vite 7 and 8 alike, so it is upstream rather than configuration.
+      #
+      # Letting it abort the job would take the other five Workers down with it — an unrelated
+      # upstream bug would block every deploy of the API, the billing hooks and the generator. It
+      # fails on its own, loudly, in the summary, and the deploy step below is gated on it.
+      - name: Build dashboard
+        id: dashboard_build
+        continue-on-error: true
+        run: pnpm --filter @aibuilder/app build
 
       # ORDER IS NOT A PREFERENCE. A service binding cannot name a Worker that does not exist:
       # billing dispatches the Workflow through the generator, and the API binds both.
@@ -121,8 +136,27 @@ jobs:
         run: pnpm exec wrangler deploy --config apps/api/wrangler.jsonc
 
       - name: Deploy app
-        if: env.TARGET == 'control-plane' || env.TARGET == 'app'
+        if: >-
+          (env.TARGET == 'control-plane' || env.TARGET == 'app') &&
+          steps.dashboard_build.outcome == 'success'
         run: pnpm exec wrangler deploy --config apps/app/wrangler.jsonc
+
+      # Silence would read as success. A skipped dashboard has to be visible on the run itself.
+      - name: Say the dashboard was skipped
+        if: >-
+          (env.TARGET == 'control-plane' || env.TARGET == 'app') &&
+          steps.dashboard_build.outcome != 'success'
+        run: |
+          {
+            echo '### Dashboard not deployed'
+            echo
+            echo 'The `apps/app` build failed, so the Worker was left on its previous version.'
+            echo 'Every other Worker in this run deployed normally.'
+            echo
+            echo 'Cause: `@cloudflare/vite-plugin` appends its virtual worker entry to the input'
+            echo 'array React Router already populated, and the bundler rejects the mixed array.'
+            echo 'See the Build dashboard step for the exact error.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Binds nothing on the control plane, so its position is free. Last, because it is the surface
       # a visitor sees and there is no reason for it to lead.
