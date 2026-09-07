@@ -1,0 +1,18 @@
+{
+  "name": "@aibuilder/preview-harness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Developer preview harness: renders four demo tenant sites and screenshots them. Not a workspace package (pnpm-workspace.yaml globs apps/* and packages/* only) and not installed by the repo root.",
+  "scripts": {
+    "preview": "node run.mjs all"
+  },
+  "devDependencies": {
+    "@fontsource-variable/archivo": "^5.2.5",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/playfair-display": "^5.2.5",
+    "@fontsource-variable/space-grotesk": "^5.2.5",
+    "@types/node": "^24.13.3",
+    "playwright": "^1.56.0"
+  }
+}

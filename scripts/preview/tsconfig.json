@@ -1,0 +1,26 @@
+{
+  // Not part of the build: `turbo run typecheck` iterates workspace packages, and this directory is
+  // not one (pnpm-workspace.yaml globs `apps/*` and `packages/*`). It exists so the harness can be
+  // type-checked on its own with the repository's own compiler and the repository's own strictness:
+  //
+  //   node_modules/.bin/tsc --noEmit -p scripts/preview
+  //
+  // `paths` is needed because the internal packages expose `"exports": { ".": "./src/index.ts" }`
+  // and are not linked into a `node_modules` the resolver can see from here. `jsx` mirrors
+  // `packages/site-kit/tsconfig.json`, because checking this code pulls that code's `.tsx` in.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    // Relative to this file (TypeScript 6 resolves `paths` without `baseUrl`, which is deprecated).
+    "paths": {
+      "@aibuilder/site-schema": ["../../packages/site-schema/src/index.ts"],
+      "@aibuilder/site-kit": ["../../packages/site-kit/src/index.ts"],
+      "@aibuilder/core": ["../../packages/core/src/index.ts"]
+    }
+  },
+  "include": ["*.ts"]
+}

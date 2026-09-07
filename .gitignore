@@ -42,3 +42,6 @@ coverage/
 .nyc_output/
 playwright-report/
 test-results/
+
+# developer preview harness output (scripts/preview/README.md)
+.preview/

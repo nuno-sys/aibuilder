@@ -78,8 +78,14 @@ export const CSS: string = minifyCss(`
     grid-template-rows:1fr; min-block-size:auto; padding-block:var(--section-y);
     --hero-copy-ink:var(--t-fg);
   }
+  /* The grid-row:2 above is written for video_fullbleed, where .hero IS the two-row grid and the
+     copy belongs in the lower band under the scrim. These two variants move the grid down to
+     .hero__inner, so that declaration would place the copy in an implicit SECOND ROW of the split
+     — media alone in row 1 column 1, copy in row 2 column 1, and column 2 left empty. Reset it. */
   .hero[data-variant="image_split"] .hero__copy,
-  .hero[data-variant="image_offset_grid"] .hero__copy{ text-align:start; justify-self:stretch }
+  .hero[data-variant="image_offset_grid"] .hero__copy{
+    grid-row:auto; text-align:start; justify-self:stretch;
+  }
   .hero[data-variant="image_split"] .hero__media,
   .hero[data-variant="image_offset_grid"] .hero__media{ position:static; z-index:0 }
   .hero[data-variant="image_split"] .hero__inner{ display:grid; gap:var(--space-8); align-items:center }

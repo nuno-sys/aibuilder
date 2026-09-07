@@ -231,6 +231,43 @@ describe('the hero band constant', () => {
   });
 });
 
+describe('layout rules every variant depends on', () => {
+  /**
+   * Two defects that shipped, were invisible to every existing test, and were only caught by
+   * looking at a rendered page. Both are shape bugs in the CSS, so both are checkable here.
+   */
+
+  it('resets grid-row on the hero variants whose grid lives on .hero__inner', () => {
+    // `.hero__copy{grid-row:2}` is correct for video_fullbleed, where `.hero` itself is the grid.
+    // image_split and image_offset_grid move the grid to `.hero__inner`; inheriting grid-row:2 put
+    // the copy in an implicit second row and left the entire second column empty.
+    const hero = COMPONENT_CSS.hero;
+    expect(hero).toContain('.hero__copy{grid-row:2');
+    const reset =
+      /\.hero\[data-variant="image_split"\] \.hero__copy,\.hero\[data-variant="image_offset_grid"\] \.hero__copy\{grid-row:auto/;
+    expect(hero).toMatch(reset);
+  });
+
+  it('gives every gallery variant a list layout, not just item styling', () => {
+    // grid_square styled the <img> and nothing else, so the list stayed a block box and each item
+    // inherited `li{max-inline-size:var(--measure)}` — one image per row at reading width.
+    const gallery = COMPONENT_CSS.gallery;
+    for (const variant of ['masonry', 'grid_square', 'carousel']) {
+      const rule = new RegExp(
+        `\\.s-gallery\\[data-variant="${variant}"\\] \\.s-gallery__list\\{[^}]*(display:grid|display:flex|columns:)`,
+      );
+      expect(gallery, `${variant} has no layout on .s-gallery__list`).toMatch(rule);
+    }
+  });
+
+  it('lays the square gallery out at the width its sizes attribute promises', () => {
+    // The markup says `(min-width:52em) 33vw`. If the CSS disagrees, the browser downloads the
+    // wrong candidate on every gallery image on the page.
+    expect(COMPONENT_CSS.gallery).toContain('@media (min-width:52em)');
+    expect(COMPONENT_CSS.gallery).toMatch(/grid-template-columns:repeat\(3,1fr\)/);
+  });
+});
+
 describe('the minifier', () => {
   it('is a pure whitespace transform and never touches calc operands', () => {
     expect(minifyCss('a {\n  color: red ;\n}')).toBe('a{color:red}');
