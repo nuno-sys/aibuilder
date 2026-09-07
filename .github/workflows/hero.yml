@@ -1,0 +1,111 @@
+name: Homepage header
+
+# Puts one real video behind the sales page, and nothing else.
+#
+# WHY THIS IS SEPARATE FROM `media.yml`
+# The full library is fifty-seven clips and two hours of AV1 encoding. The marketing hero is ONE
+# clip that is copied into `apps/marketing/public/` and served by Astro — it never enters a
+# selection pool and never reaches R2. Making a change to the sales page's header wait for the
+# tenant library is two hours to change one video, so it doesn't.
+#
+# The clip is CHOSEN, not accepted: `fetch-footage.mjs` measures every candidate and keeps the
+# brightest, because the hero sets dark ink over it and every step above the luminance boundary is
+# contrast the copy gets for free.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: homepage-header
+  cancel-in-progress: false
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  WRANGLER_SEND_METRICS: "false"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  hero:
+    name: Fetch, encode, publish the header
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PEXELS_KEY: ${{ secrets.PEXELS_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+      STRIPE_PRICE_ID: ${{ vars.STRIPE_PRICE_ID }}
+      INDEXNOW_KEY: ${{ vars.INDEXNOW_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # `npm install`, not `npm ci`: scripts/preview/.gitignore ignores package-lock.json, so the
+      # runner checks that directory out without one and `npm ci` cannot work here at all.
+      - name: Install ffmpeg
+        working-directory: scripts/preview
+        run: npm install --omit=dev
+
+      - name: Check the key is present
+        run: |
+          if [ -z "${PEXELS_KEY}" ]; then
+            echo "::error::PEXELS_KEY is not set. Free and instant at https://www.pexels.com/api/."
+            exit 1
+          fi
+
+      - name: Choose the brightest header
+        run: node scripts/media-library/fetch-footage.mjs --groups=brand --force
+
+      # `--brand-only`: the tenant library's coverage gate wants two light and two dark clips for
+      # all fourteen industry groups, which has nothing to say about the marketing hero.
+      - name: Encode it
+        run: node scripts/media-library/ingest.mjs --brand-only
+
+      - name: Stage it into the marketing site
+        run: pnpm run media:marketing
+
+      - name: Verify
+        run: pnpm run verify
+
+      - name: Commit the header
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/marketing/public/media/hero apps/marketing/src/content/hero-media.generated.ts
+          if git diff --cached --quiet; then
+            echo "header unchanged — nothing to commit"
+          else
+            git commit -m "chore(marketing): real footage behind the sales page header
+
+            Chosen and encoded by .github/workflows/hero.yml."
+            # The branch may have moved while this ran. Rebase rather than fail after the work.
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push origin HEAD:"${GITHUB_REF_NAME}"
+          fi
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Provision Cloudflare resources
+        run: node scripts/cloudflare/bootstrap.mjs
+
+      # Only the marketing Worker. Nothing else changed, and the tenant zone is not touched.
+      - name: Deploy marketing
+        run: pnpm exec wrangler deploy --config apps/marketing/wrangler.jsonc
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '### Homepage header'
+            echo
+            echo 'Live at <https://aibuilder-marketing.nuno-nf6.workers.dev>'
+          } >> "$GITHUB_STEP_SUMMARY"

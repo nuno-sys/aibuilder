@@ -125,6 +125,16 @@ const args = new Set(process.argv.slice(2));
 const FORCE = args.has('--force');
 const SYNTHESIZE = args.has('--synthesize');
 
+/**
+ * Ingest only the marketing site's own header, and hold the coverage gate.
+ *
+ * The gate demands two light and two dark clips for all fourteen industry groups, which is right
+ * for the tenant library and meaningless for the brand clip: `brand` is not a group, never enters a
+ * selection pool, and is the ONLY thing the marketing hero needs. Without this flag, refreshing the
+ * sales page's header means transcoding fifty-seven clips first — two hours to change one video.
+ */
+const BRAND_ONLY = args.has('--brand-only');
+
 function ff(argv, capture = false) {
   return execFileSync(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', ...argv], {
     stdio: capture ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'ignore', 'pipe'],
@@ -571,6 +581,27 @@ function main() {
   }
   console.log('ingesting:');
   const { videos, images, brand } = ingest();
+
+  // The brand clip is staged into `apps/marketing/public/` and never uploaded to R2, so it does not
+  // belong in the manifest the catalogue is projected from. Writing that manifest here would empty
+  // the shipped catalogue of all fifty-seven tenant clips.
+  if (BRAND_ONLY) {
+    writeFileSync(
+      MANIFEST,
+      JSON.stringify(
+        { version: 1, builtAt: new Date().toISOString(), videos: [], images: [], brand },
+        null,
+        2,
+      ) + '\n',
+    );
+    if (brand.length === 0) {
+      console.log(`\nno ${BRAND} clip ingested — sources/${BRAND}/ is empty`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`\nbrand clip ready -> ${path.relative(ROOT, MANIFEST)}`);
+    return;
+  }
 
   const manifest = {
     version: 1,

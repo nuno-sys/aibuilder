@@ -172,6 +172,9 @@ jobs:
 
           Fetched, transcoded and measured by .github/workflows/media.yml.
           Binaries are in R2 under library/<key>; only the index is committed."
+          # Two hours have passed since the checkout; the branch has very likely moved. Rebase
+          # rather than throw the whole run away on a non-fast-forward at the last step.
+          git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin HEAD:"${GITHUB_REF_NAME}"
           echo "deploy=true" >> "$GITHUB_OUTPUT"
 

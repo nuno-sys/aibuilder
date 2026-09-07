@@ -148,7 +148,20 @@ const BRIGHT_FALLBACK = 'white minimal bright overexposed daylight';
  * does not ask it for both luminances — see `BRAND` in `ingest.mjs`.
  */
 const BRAND = 'brand';
-const BRAND_QUERY = 'soft abstract light gradient minimal';
+
+/**
+ * The sales page's own header.
+ *
+ * Two queries, both of them relevant AND white. Relevant because this clip is the first thing a
+ * small-business owner sees on a page selling them a website, and an abstract gradient says nothing
+ * about that; white because the hero sets dark ink over it and the whole page is unreadable if the
+ * clip comes back moody. Unlike a tenant group, the brightest candidate wins rather than the first
+ * — see `fill()`.
+ */
+const BRAND_QUERIES = [
+  'white desk laptop workspace sunlight minimal',
+  'white minimal interior sunlight architecture',
+];
 
 const args = new Set(process.argv.slice(2));
 const FORCE = args.has('--force');
@@ -174,13 +187,13 @@ function linearise(channel) {
 }
 
 /**
- * `light` or `dark`, measured off the same frame `ingest.mjs` will measure.
+ * The measured luminance of the same frame `ingest.mjs` will measure, as a number.
  *
  * Same second, same 1x1 downscale, same coefficients, same boundary. If these two ever drift the
  * filenames stop describing the manifest, so the duplication is deliberate and small: this script
  * must not import from the ingest, because the ingest is a build step with side effects.
  */
-function luminanceOf(file) {
+function luminanceValueOf(file) {
   const raw = execFileSync(
     FFMPEG,
     // prettier-ignore
@@ -191,8 +204,11 @@ function luminanceOf(file) {
   if (raw.length < 3) {
     return null;
   }
-  const value =
-    0.2126 * linearise(raw[0]) + 0.7152 * linearise(raw[1]) + 0.0722 * linearise(raw[2]);
+  return 0.2126 * linearise(raw[0]) + 0.7152 * linearise(raw[1]) + 0.0722 * linearise(raw[2]);
+}
+
+/** The class the ingest will independently arrive at for the same frame. */
+function classOf(value) {
   return value >= LUMINANCE_BOUNDARY ? 'light' : 'dark';
 }
 
@@ -386,6 +402,9 @@ async function fill(group, queries, want) {
   const scratch = path.join(SOURCES, '.candidate.mp4');
   let downloads = 0;
   let kept = 0;
+  /** BRAND only: the brightest candidate seen so far, already written to `header.mp4`. */
+  let brightest = null;
+  let fallbackSpent = false;
 
   for (let w = 0; w < waves.length; w += 1) {
     const { perQuery, budget } = waves[w];
@@ -406,19 +425,39 @@ async function fill(group, queries, want) {
 
     let spent = 0;
     for (const { video, file } of byId.values()) {
-      if (Object.values(remaining).every((n) => n === 0)) break;
+      if (group !== BRAND && Object.values(remaining).every((n) => n === 0)) break;
       if (spent >= budget) break;
       spent += 1;
       downloads += 1;
       seen.add(video.id);
 
       await download(file.link, scratch);
-      const luminance = luminanceOf(scratch);
-      if (luminance === null || (remaining[luminance] ?? 0) === 0) {
+      const value = luminanceValueOf(scratch);
+      if (value === null) {
         continue;
       }
-      remaining[luminance] -= 1;
+      const luminance = classOf(value);
+      if ((remaining[luminance] ?? 0) === 0) {
+        continue;
+      }
 
+      // The brand clip is the one the sales page shows, so it is chosen rather than accepted: keep
+      // looking and keep the BRIGHTEST candidate. The marketing hero sets dark ink over this clip,
+      // and every step of luminance above the boundary is contrast the copy gets for free.
+      if (group === BRAND) {
+        if (brightest !== null && value <= brightest.value) {
+          continue;
+        }
+        brightest = { value, video, file, path: path.join(dir, 'header.mp4') };
+        renameSync(scratch, brightest.path);
+        console.log(
+          `  ${group.padEnd(14)} candidate      luminance ${value.toFixed(3)}  ` +
+            `${String(file.width)}x${String(file.height)}  #${String(video.id)}`,
+        );
+        continue;
+      }
+
+      remaining[luminance] -= 1;
       const name = nameFor(group, luminance, video);
       const target = path.join(dir, `${name}.mp4`);
       renameSync(scratch, target);
@@ -434,16 +473,43 @@ async function fill(group, queries, want) {
       );
     }
 
-    // Only a LIGHT shortfall earns another wave, and only once. A dark shortfall is not a
+    // Only a LIGHT shortfall earns another wave, and only ONCE. A dark shortfall is not a
     // vocabulary problem — almost all footage measures dark against this boundary — so a second
-    // query would not find anything the first one missed.
-    if (w === waves.length - 1 && (remaining.light ?? 0) > 0) {
-      console.log(`  ${group.padEnd(14)} light slots still open — trying the bright fallback`);
+    // query would find nothing the first one missed.
+    //
+    // `fallbackSpent` is load-bearing, not defensive. BRAND never decrements `remaining` (it keeps
+    // the brightest candidate rather than filling a slot), so `remaining.light` stays 1 for its
+    // whole run: without this flag the condition below is true on every pass, every pass appends a
+    // wave, and the loop never ends. Found by running it.
+    const shortOfLight = group === BRAND ? brightest === null : (remaining.light ?? 0) > 0;
+    if (!fallbackSpent && w === waves.length - 1 && shortOfLight) {
+      fallbackSpent = true;
+      console.log(`  ${group.padEnd(14)} no light footage yet — trying the bright fallback`);
       waves.push(await wave([BRIGHT_FALLBACK], FALLBACK_DOWNLOADS));
     }
   }
 
   rmSync(scratch, { force: true });
+
+  if (group === BRAND) {
+    if (brightest === null) {
+      console.log(
+        `  ${group.padEnd(14)} UNFILLED: no light clip after ${String(downloads)} downloads`,
+      );
+      process.exitCode = 1;
+      return 0;
+    }
+    writeFileSync(
+      path.join(dir, 'header.json'),
+      JSON.stringify(sidecarFor(brightest.video, group), null, 2) + '\n',
+    );
+    console.log(
+      `  ${group.padEnd(14)} header         CHOSEN    luminance ${brightest.value.toFixed(3)}  ` +
+        `${String(Math.round(statSync(brightest.path).size / 1024 / 1024))} MB  ` +
+        `#${String(brightest.video.id)}`,
+    );
+    return 1;
+  }
 
   const unfilled = Object.entries(remaining).filter(([, n]) => n > 0);
   if (unfilled.length > 0) {
@@ -478,7 +544,7 @@ async function main() {
     kept += await fill(group, queries, { dark: PER_LUMINANCE, light: PER_LUMINANCE });
   }
   if (ONLY === null || ONLY.has(BRAND)) {
-    kept += await fill(BRAND, [BRAND_QUERY], { light: 1 });
+    kept += await fill(BRAND, BRAND_QUERIES, { light: 1 });
   }
 
   console.log(
