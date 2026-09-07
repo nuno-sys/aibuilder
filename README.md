@@ -148,9 +148,24 @@ under `onlyBuiltDependencies` in [`pnpm-workspace.yaml`](pnpm-workspace.yaml).
 > **Settle [open question 1](#open-questions) — the control-plane domain — before you start.** It
 > cannot be retrofitted once tenant slugs are indexed.
 
+### The short way: run it from GitHub
+
+Put `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the repository's Actions secrets, then
+Actions → **Bootstrap Cloudflare** → Run workflow. It creates every resource the wrangler configs
+bind — reading the list out of the configs themselves, so it cannot drift from what the code
+expects — and opens a PR with the 27 ids filled in. `dry_run` is the default and prints the plan
+without touching the account; it is safe to run twice, because every resource is listed before it is
+created and the id is always read back.
+
+It does not create secrets (values, not resources), zones (a nameserver change at your registrar) or
+migrations (`pnpm migrate:*:remote` is where forward-only starts, and that is a decision, not a side
+effect). Steps 6, 7 and 9 below are still yours.
+
+### The long way, by hand
+
 `pnpm bootstrap` only confirms which Cloudflare account you are pointed at and then stops. Creating
-immutable resources is deliberately not automated: run the commands below one at a time and record
-each id in `.env` as it is printed.
+immutable resources is deliberately not automated here: run the commands below one at a time and
+record each id in `.env` as it is printed.
 
 ### 1. Verify the account
 
@@ -198,12 +213,17 @@ bucket additionally needs a 24-hour lifecycle rule (dashboard → R2 → aibuild
 ```bash
 pnpm exec wrangler kv namespace create aibuilder-routing
 pnpm exec wrangler kv namespace create aibuilder-geo
+pnpm exec wrangler kv namespace create aibuilder-stock-cache
 ```
+
+Three, not two. `STOCK_CACHE` is bound by the generator and was missing from this list — the kind of
+drift the GitHub workflow above avoids by reading the configs instead of a written-down list.
 
 The positional argument is the namespace _title_; the binding names inside `wrangler.jsonc` stay
 `ROUTING` and `GEO`, and only the printed `id` is ever referenced.
 
-Record both ids in `.env` as `KV_ROUTING_NAMESPACE_ID` and `KV_GEO_NAMESPACE_ID`. KV is deliberately
+Record the ids in `.env` as `KV_ROUTING_NAMESPACE_ID`, `KV_GEO_NAMESPACE_ID` and
+`KV_STOCK_CACHE_NAMESPACE_ID`. KV is deliberately
 edge-global: it holds no personal data, only `host → {siteId, shardId, liveVersion, locales,
 defaultLocale, indexState}`.
 

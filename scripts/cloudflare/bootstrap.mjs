@@ -1,0 +1,341 @@
+/**
+ * Creates every Cloudflare resource the wrangler configs bind, and writes the ids back into them.
+ *
+ * WHY THIS READS THE CONFIGS INSTEAD OF A LIST. The set of resources is already stated, exactly
+ * once, in `apps/*&#47;wrangler.jsonc`. A second list here would be a second thing to keep true, and the
+ * failure mode is quiet: a binding added to a config and forgotten here is a Worker that deploys
+ * and then throws on its first request. The README's own bootstrap section had already drifted this
+ * way — it creates two KV namespaces and the configs bind three (`STOCK_CACHE` was missing), which
+ * would have failed the generator's first deploy.
+ *
+ * IT IS IDEMPOTENT. Every resource is listed before it is created and the id is always read back
+ * from the account, so a second run over a half-finished bootstrap finishes it instead of erroring.
+ * That matters because this runs in CI, where "run it again" is the only recovery available.
+ *
+ * THREE THINGS IT DELIBERATELY DOES NOT DO:
+ *   · secrets — they are values, not resources, and a workflow that reads them would need them in
+ *     its own environment. They go in the dashboard or through `wrangler secret put`.
+ *   · zones and DNS — adding a domain needs a nameserver change at your registrar.
+ *   · migrations — `pnpm migrate:*:remote` is the moment "forward-only" starts, and that is a
+ *     decision someone makes after reading the SQL, not a side effect of provisioning.
+ *
+ *   node scripts/cloudflare/bootstrap.mjs --dry-run   # print the plan, touch nothing
+ *   node scripts/cloudflare/bootstrap.mjs             # create what is missing, patch the configs
+ */
+import { execFileSync } from 'node:child_process';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(HERE, '..', '..');
+const APPS = path.join(ROOT, 'apps');
+
+const DRY_RUN = process.argv.includes('--dry-run');
+
+/** Residency, and a one-way door: D1 and R2 both fix it at creation with no move API. */
+const JURISDICTION = 'eu';
+
+/** The Secrets Store this account's Worker secrets live in. One store, many secrets. */
+const SECRETS_STORE = 'aibuilder';
+
+function wrangler(argv, { capture = true } = {}) {
+  return execFileSync('pnpm', ['exec', 'wrangler', ...argv], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    maxBuffer: 32 * 1024 * 1024,
+  });
+}
+
+/**
+ * Runs a wrangler command that may legitimately fail (a `list` on an empty account, a `create` that
+ * races another run), returning `null` rather than throwing.
+ */
+function tryWrangler(argv) {
+  try {
+    return wrangler(argv);
+  } catch {
+    return null;
+  }
+}
+
+/** The first JSON value in wrangler's output. It prints banners around it. */
+function parseJson(output) {
+  if (output === null) return null;
+  const start = output.search(/[[{]/u);
+  if (start === -1) return null;
+  try {
+    return JSON.parse(output.slice(start));
+  } catch {
+    return null;
+  }
+}
+
+/* ── What the configs actually bind ───────────────────────────────────────── */
+
+/** Strips comments and trailing commas so `JSON.parse` can read a `.jsonc`. */
+function readJsonc(file) {
+  const raw = readFileSync(file, 'utf8');
+  const withoutComments = raw
+    .replace(/\/\*[\s\S]*?\*\//gu, '')
+    .replace(/(^|[^:])\/\/.*$/gmu, '$1')
+    .replace(/,(\s*[}\]])/gu, '$1');
+  return JSON.parse(withoutComments);
+}
+
+/** Every resource named by every app config, deduplicated. */
+function inventory() {
+  const d1 = new Set();
+  const kv = new Set();
+  const r2 = new Set();
+  const queues = new Set();
+
+  for (const app of readdirSync(APPS)) {
+    const file = path.join(APPS, app, 'wrangler.jsonc');
+    let config;
+    try {
+      config = readJsonc(file);
+    } catch {
+      continue;
+    }
+    for (const database of config.d1_databases ?? []) d1.add(database.database_name);
+    for (const namespace of config.kv_namespaces ?? []) kv.add(namespace.binding);
+    for (const bucket of config.r2_buckets ?? []) r2.add(bucket.bucket_name);
+    for (const producer of config.queues?.producers ?? []) queues.add(producer.queue);
+    for (const consumer of config.queues?.consumers ?? []) {
+      queues.add(consumer.queue);
+      if (consumer.dead_letter_queue) queues.add(consumer.dead_letter_queue);
+    }
+  }
+  return { d1: [...d1], kv: [...kv], r2: [...r2], queues: [...queues] };
+}
+
+/**
+ * The KV namespace TITLE for a binding.
+ *
+ * The binding is what the code says (`env.ROUTING`); the title is what the account lists. Deriving
+ * one from the other keeps them from being two independent decisions.
+ */
+const kvTitle = (binding) => `aibuilder-${binding.toLowerCase().replaceAll('_', '-')}`;
+
+/* ── Create, or find what is already there ────────────────────────────────── */
+
+function ensureD1(name) {
+  const existing = parseJson(tryWrangler(['d1', 'list', '--json'])) ?? [];
+  const found = existing.find((database) => database.name === name);
+  if (found) return { id: found.uuid ?? found.database_id, created: false };
+  if (DRY_RUN) return { id: null, created: true };
+
+  wrangler(['d1', 'create', name, '--jurisdiction', JURISDICTION]);
+  const after = parseJson(tryWrangler(['d1', 'list', '--json'])) ?? [];
+  const made = after.find((database) => database.name === name);
+  if (!made) throw new Error(`created D1 "${name}" but it is not in the account listing`);
+  return { id: made.uuid ?? made.database_id, created: true };
+}
+
+function ensureKv(binding) {
+  const title = kvTitle(binding);
+  const existing = parseJson(tryWrangler(['kv', 'namespace', 'list'])) ?? [];
+  const found = existing.find((namespace) => namespace.title === title);
+  if (found) return { id: found.id, created: false };
+  if (DRY_RUN) return { id: null, created: true };
+
+  wrangler(['kv', 'namespace', 'create', title]);
+  const after = parseJson(tryWrangler(['kv', 'namespace', 'list'])) ?? [];
+  const made = after.find((namespace) => namespace.title === title);
+  if (!made) throw new Error(`created KV "${title}" but it is not in the account listing`);
+  return { id: made.id, created: true };
+}
+
+function ensureR2(name) {
+  // `--jurisdiction` and `--location` are mutually exclusive for R2; the jurisdiction is the
+  // residency control and the one that changes the S3 endpoint host, so it is the one that matters.
+  const listing = tryWrangler(['r2', 'bucket', 'list', '--jurisdiction', JURISDICTION]) ?? '';
+  if (listing.includes(name)) return { created: false };
+  if (DRY_RUN) return { created: true };
+  wrangler(['r2', 'bucket', 'create', name, '--jurisdiction', JURISDICTION]);
+  return { created: true };
+}
+
+function ensureQueue(name) {
+  const listing = tryWrangler(['queues', 'list']) ?? '';
+  if (listing.includes(name)) return { created: false };
+  if (DRY_RUN) return { created: true };
+  wrangler(['queues', 'create', name]);
+  return { created: true };
+}
+
+function ensureSecretsStore() {
+  const existing = parseJson(tryWrangler(['secrets-store', 'store', 'list', '--remote'])) ?? [];
+  const found = Array.isArray(existing)
+    ? existing.find((store) => store.name === SECRETS_STORE)
+    : undefined;
+  if (found) return { id: found.id, created: false };
+  if (DRY_RUN) return { id: null, created: true };
+
+  wrangler(['secrets-store', 'store', 'create', SECRETS_STORE, '--remote']);
+  const after = parseJson(tryWrangler(['secrets-store', 'store', 'list', '--remote'])) ?? [];
+  const made = Array.isArray(after)
+    ? after.find((store) => store.name === SECRETS_STORE)
+    : undefined;
+  if (!made) throw new Error('created the Secrets Store but it is not in the account listing');
+  return { id: made.id, created: true };
+}
+
+/* ── Writing the ids back ─────────────────────────────────────────────────── */
+
+/**
+ * Replaces the placeholders in one config, using the line's own context to decide which id.
+ *
+ * Line-oriented rather than a JSON round-trip, because these files carry the reasoning for every
+ * binding in their comments and `JSON.stringify` would delete all of it. The context is whatever
+ * `binding` or `database_name` was seen most recently — which is on the same line for the one-line
+ * bindings and a few lines up for the block ones, and both work because the context is updated
+ * before the substitution on each line.
+ */
+/**
+ * Walks one config, resolving every placeholder line against the ids this run produced.
+ *
+ * One traversal serves both callers — the writer and the report — so "what got filled" and "what is
+ * left" can never disagree about which placeholders this script is even responsible for. The
+ * context is whatever `binding` or `database_name` was seen most recently: on the same line for the
+ * one-line bindings, a few lines up for the block ones, and both work because the context is
+ * updated before the substitution is decided.
+ *
+ * Line-oriented rather than a JSON round-trip, because these files carry the reasoning for every
+ * binding in their comments and `JSON.stringify` would delete all of it.
+ */
+function resolvePlaceholders(file, ids) {
+  const lines = readFileSync(file, 'utf8').split('\n');
+  let binding = null;
+  let databaseName = null;
+  /** Placeholders this script owns but could not resolve — a resource that was never created. */
+  const unresolved = [];
+  /** Placeholders that are values rather than resources: never this script's to fill. */
+  const foreign = [];
+  let changed = 0;
+
+  const out = lines.map((line) => {
+    const bindingMatch = /"binding":\s*"([A-Z0-9_]+)"/u.exec(line);
+    if (bindingMatch) binding = bindingMatch[1];
+    const nameMatch = /"database_name":\s*"([a-z0-9-]+)"/u.exec(line);
+    if (nameMatch) databaseName = nameMatch[1];
+
+    // A comment that merely NAMES the placeholder is documentation, not a placeholder.
+    if (!line.includes('REPLACE_WITH_REAL_ID') || /^\s*\/\//u.test(line)) return line;
+
+    let value;
+    let owned = true;
+    if (/"database_id":/u.test(line) && databaseName !== null) value = ids.d1[databaseName];
+    else if (/"id":/u.test(line) && binding !== null) value = ids.kv[binding];
+    else if (/"store_id":/u.test(line)) value = ids.secretsStore;
+    else if (/"R2_S3_ENDPOINT":/u.test(line)) value = ids.accountId;
+    else owned = false;
+
+    if (!owned) {
+      foreign.push(line.trim());
+      return line;
+    }
+    if (value === null || value === undefined) {
+      unresolved.push(line.trim());
+      return line;
+    }
+    changed += 1;
+    return line.replace('REPLACE_WITH_REAL_ID', value);
+  });
+
+  if (changed > 0 && !DRY_RUN) writeFileSync(file, out.join('\n'));
+  return { changed, unresolved, foreign };
+}
+
+/* ── Run ──────────────────────────────────────────────────────────────────── */
+
+const want = inventory();
+console.log(
+  `configs bind: ${String(want.d1.length)} D1, ${String(want.kv.length)} KV, ` +
+    `${String(want.r2.length)} R2, ${String(want.queues.length)} queues\n`,
+);
+
+const accountId = process.env['CLOUDFLARE_ACCOUNT_ID'] ?? null;
+if (accountId === null) {
+  console.log('CLOUDFLARE_ACCOUNT_ID is not set — R2_S3_ENDPOINT will keep its placeholder.\n');
+}
+
+const ids = { d1: {}, kv: {}, secretsStore: null, accountId };
+const report = [];
+
+for (const name of want.d1) {
+  const { id, created } = ensureD1(name);
+  ids.d1[name] = id;
+  report.push(['D1', name, created ? 'created' : 'existed', id ?? '(dry run)']);
+}
+for (const binding of want.kv) {
+  const { id, created } = ensureKv(binding);
+  ids.kv[binding] = id;
+  report.push([
+    'KV',
+    `${kvTitle(binding)} -> ${binding}`,
+    created ? 'created' : 'existed',
+    id ?? '(dry run)',
+  ]);
+}
+for (const name of want.r2) {
+  const { created } = ensureR2(name);
+  report.push(['R2', `${name} [${JURISDICTION}]`, created ? 'created' : 'existed', '']);
+}
+// The dead-letter queue must exist before the consumer that names it, or the generator's first
+// deploy fails. `inventory()` yields producers before consumers, and the DLQ with its consumer.
+for (const name of want.queues) {
+  const { created } = ensureQueue(name);
+  report.push(['Queue', name, created ? 'created' : 'existed', '']);
+}
+{
+  const { id, created } = ensureSecretsStore();
+  ids.secretsStore = id;
+  report.push(['Store', SECRETS_STORE, created ? 'created' : 'existed', id ?? '(dry run)']);
+}
+
+for (const [kind, name, state, id] of report) {
+  console.log(`${kind.padEnd(6)} ${name.padEnd(42)} ${state.padEnd(8)} ${id}`);
+}
+
+let patched = 0;
+const unresolved = [];
+const foreign = [];
+
+for (const app of readdirSync(APPS)) {
+  const file = path.join(APPS, app, 'wrangler.jsonc');
+  let result;
+  try {
+    result = resolvePlaceholders(file, ids);
+  } catch {
+    // A config that does not exist is not an error: not every app binds a resource.
+    continue;
+  }
+  patched += result.changed;
+  for (const line of result.unresolved) unresolved.push(`${app}: ${line}`);
+  for (const line of result.foreign) foreign.push(`${app}: ${line}`);
+  if (result.changed > 0) {
+    console.log(
+      `\n  ${path.relative(ROOT, file)}: ${String(result.changed)} placeholder(s) filled`,
+    );
+  }
+}
+
+console.log(
+  `\n${DRY_RUN ? 'would fill' : 'filled'} ${String(DRY_RUN ? unresolved.length : patched)} ` +
+    'resource placeholder(s)',
+);
+
+// In a dry run every owned placeholder lands in `unresolved`, because no id was fetched. That is
+// the plan, not a problem, so it is only a warning on a real run.
+if (!DRY_RUN && unresolved.length > 0) {
+  console.log('\nOwned but unresolved — a resource was not created. Re-run this workflow:');
+  for (const line of unresolved) console.log(`  ${line}`);
+}
+
+if (foreign.length > 0) {
+  console.log('\nStill yours to fill — values, not resources this script can create:');
+  for (const line of foreign) console.log(`  ${line}`);
+}
