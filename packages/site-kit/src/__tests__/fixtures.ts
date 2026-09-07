@@ -206,6 +206,8 @@ export interface FixtureOptions {
   readonly reviewsSource?: SiteDoc['facts']['reviewsSource'];
   readonly theme?: Partial<SiteDoc['theme']>;
   readonly sections?: readonly SectionGen[];
+  /** Ref id of the footer's photographic ground. `undefined` leaves the footer flat. */
+  readonly footerMediaRefId?: string;
 }
 
 /** A `SiteDoc` carrying all 17 sections and the hostile payload in every slot. */
@@ -292,7 +294,7 @@ export function hostileDoc(options: FixtureOptions = {}): SiteDoc {
       navStyle: 'logo_left_links_right',
       footerStyle: 'rich_4col',
       whatsappEnabled: true,
-      footerMediaRefId: null,
+      footerMediaRefId: options.footerMediaRefId ?? null,
     },
     pages,
     copy: {

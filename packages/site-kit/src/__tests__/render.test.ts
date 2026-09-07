@@ -196,6 +196,39 @@ describe('the document', () => {
     }
   });
 
+  it('closes the page on the same footage it opened with, under the proven scrim', async () => {
+    const { html, css } = await render(hostileDoc({ footerMediaRefId: 'm1' }));
+    const footer = /<footer class="site-footer"[\s\S]*?<\/footer>/u.exec(html)?.[0] ?? '';
+
+    expect(footer).toContain('data-ground="1"');
+    expect(footer).toContain('site-footer__ground');
+    expect(footer).toContain('site-footer__scrim');
+    // Below every fold there is: an eager fetch here competes with the LCP element for bandwidth
+    // on exactly the connections that cannot spare it.
+    expect(footer).toContain('loading="lazy"');
+    // One ink decision for every surface that puts type over pixels, so a site cannot read
+    // white-on-photo at the top and black-on-photo at the bottom.
+    const heroInk = /<section class="hero[^>]*data-ink="(light|dark)"/u.exec(html)?.[1];
+    expect(footer).toContain(`data-ink="${heroInk ?? ''}"`);
+
+    // The scrim must reuse the HERO's derived alpha rather than a literal of its own. A second
+    // constant is a second thing to keep true, and this one carries a 7:1 proof.
+    expect(css.css).toContain('.site-footer__scrim');
+    expect(css.css).toMatch(
+      /\.site-footer\[data-ink="light"\] \.site-footer__scrim\{background:rgb\(0 0 0 ?\/ ?var\(--hero-scrim-band\)\)/u,
+    );
+    expect(css.css).toMatch(
+      /\.site-footer\[data-ink="dark"\] \.site-footer__scrim\{background:rgb\(255 255 255 ?\/ ?var\(--hero-scrim-band\)\)/u,
+    );
+  });
+
+  it('leaves the footer flat when the pipeline picked no ground', async () => {
+    const { html } = await render();
+    const footer = /<footer class="site-footer"[\s\S]*?<\/footer>/u.exec(html)?.[0] ?? '';
+    expect(footer).not.toContain('data-ground');
+    expect(footer).not.toContain('site-footer__ground');
+  });
+
   it('never disables pinch zoom', async () => {
     const { html } = await render();
     expect(html).toContain('viewport-fit=cover');

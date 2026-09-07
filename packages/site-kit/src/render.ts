@@ -215,7 +215,9 @@ export async function renderPage(
     '<main id="main">',
     body,
     '</main>',
-    String(SiteFooter({ doc: themed, locale, currentPageId: pageId, madeWith: options.madeWith })),
+    String(
+      SiteFooter({ doc: themed, ctx, locale, currentPageId: pageId, madeWith: options.madeWith }),
+    ),
     whatsappMarkup(themed, locale),
     `<script>${SITE_JS}</script>`,
     SPECULATION_RULES,
