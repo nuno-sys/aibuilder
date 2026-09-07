@@ -51,7 +51,7 @@ import {
   SCHEMA_ORG_TYPES,
   SiteStructureGen,
 } from './gen/site-structure';
-import type { JsonLdInputsGen, PageGen, ThemeGen } from './gen/site-structure';
+import type { JsonLdInputsGen, PageGen, PageRole, ThemeGen } from './gen/site-structure';
 import type { SlotInventory } from './slots';
 
 /**
@@ -145,6 +145,7 @@ export type RepairCode =
   | 'blank_slot_dropped'
   | 'dangling_media_ref_dropped'
   | 'dangling_link_ref_dropped'
+  | 'hero_ctas_backfilled'
   | 'section_dropped'
   | 'page_dropped'
   | 'block_dropped';
@@ -1239,6 +1240,88 @@ function enforceSingleHome(pages: readonly PageGen[], log: RepairLog): PageGen[]
  * page holds the `home` role; every array is inside `LIMITS`. Returns
  * `value: null` only when no page survived.
  */
+/**
+ * Roles a hero's PRIMARY button may point at, best first.
+ *
+ * The order is the order a visitor's intent runs in: book if the trade takes bookings, otherwise
+ * see what is on offer. `contact` is absent on purpose — it is the secondary's job, and a hero
+ * whose two buttons both lead to contact has one button.
+ */
+const PRIMARY_CTA_ROLES: readonly PageRole[] = ['booking', 'services', 'menu', 'gallery', 'about'];
+
+/** Roles the SECONDARY button may point at, best first. */
+const SECONDARY_CTA_ROLES: readonly PageRole[] = ['contact', 'booking', 'services', 'about'];
+
+/** Whether two link targets would send a visitor to the same place. */
+function sameLinkTarget(a: LinkRef, b: LinkRef): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'page' && b.kind === 'page') return a.pageId === b.pageId;
+  if (a.kind === 'anchor' && b.kind === 'anchor') return a.sectionId === b.sectionId;
+  if (a.kind === 'external' && b.kind === 'external') return a.refId === b.refId;
+  return true;
+}
+
+/**
+ * Gives every hero exactly two buttons, backfilled from the site's own pages.
+ *
+ * A PRODUCT RULE enforced deterministically rather than asked of the model, on the same reasoning
+ * as `variant: 'video_fullbleed'` two hundred lines up: the full-screen header is two buttons and a
+ * line of copy over moving footage, and a hero that came back with one button — or none — is not a
+ * quieter take on that, it is a header with nothing to do. The site's routing already knows where
+ * the second button goes, so asking the model again is the expensive way to get a known answer.
+ *
+ * IT RUNS HERE, NOT IN `gen-to-doc`, AND THE REASON IS THE COPY. A button carries a label, and a
+ * label is a slot; the slot inventory is derived from the structure and the copy pass fills it. Add
+ * a button after that and it is a button with no text in any locale — which is how the first
+ * version of this failed. Adding it to the structure means the label is generated with all the
+ * others, in every language, by the model that knows what the business does.
+ *
+ * The model's own choices are always kept. This only adds, and never adds a second button that
+ * leads where the first one leads.
+ */
+function withHeroCtas(pages: readonly PageGen[], log: RepairLog): PageGen[] {
+  const pageFor = (roles: readonly PageRole[]): LinkRef | null => {
+    for (const role of roles) {
+      const page = pages.find((candidate) => candidate.role === role);
+      if (page !== undefined) return { kind: 'page', pageId: page.pageId };
+    }
+    return null;
+  };
+
+  return pages.map((page, pageIndex) => ({
+    ...page,
+    sections: page.sections.map((section, sectionIndex) => {
+      if (section.type !== 'hero' || section.ctas.length >= LIMITS.ctasPerSection.max) {
+        return section;
+      }
+      const ctas = [...section.ctas];
+      const empty = ctas.length === 0;
+      for (const candidate of [
+        pageFor(empty ? PRIMARY_CTA_ROLES : SECONDARY_CTA_ROLES),
+        pageFor(empty ? SECONDARY_CTA_ROLES : PRIMARY_CTA_ROLES),
+        // Last resort. Every business in the intake has a phone, so a hero always has a second
+        // thing to offer even on a one-page site with no services page to point at.
+        { kind: 'whatsapp', _: null } as LinkRef,
+        { kind: 'tel', _: null } as LinkRef,
+      ]) {
+        if (ctas.length >= LIMITS.ctasPerSection.max) break;
+        if (candidate === null) continue;
+        if (ctas.some((cta) => sameLinkTarget(cta.target, candidate))) continue;
+        ctas.push({ target: candidate, style: ctas.length === 0 ? 'primary' : 'secondary' });
+      }
+      if (ctas.length !== section.ctas.length) {
+        note(
+          log,
+          'hero_ctas_backfilled',
+          `pages.${pageIndex}.sections.${sectionIndex}.ctas`,
+          `${section.ctas.length} -> ${ctas.length}`,
+        );
+      }
+      return { ...section, ctas };
+    }),
+  }));
+}
+
 export function normalizeStructure(
   input: unknown,
   ctx: NormalizeContext,
@@ -1296,6 +1379,9 @@ export function normalizeStructure(
       resolveSectionLinks(section, resolve, log, `pages.${pageIndex}.sections.${sectionIndex}`),
     ),
   }));
+  // After link resolution, so the targets this adds are page ids that already exist and need no
+  // second pass — and before the inventory is derived, so the labels get written.
+  const dressed = withHeroCtas(linked, log);
 
   const safety = asRecord(root.inputSafety) ?? {};
   const rawContainsInstructions: unknown = safety.containsInstructions;
@@ -1311,7 +1397,7 @@ export function normalizeStructure(
       log,
       'primaryLocale',
     ),
-    pages: linked,
+    pages: dressed,
     jsonLd: normalizeJsonLdInputs(root.jsonLd, log),
     navStyle: pickEnum(root.navStyle, NAV_STYLES, 'logo_left_links_right', log, 'navStyle'),
     footerStyle: pickEnum(root.footerStyle, FOOTER_STYLES, 'compact_2col', log, 'footerStyle'),

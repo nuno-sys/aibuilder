@@ -171,8 +171,54 @@ describe('normalizeStructure', () => {
     const section = result.value?.pages[0]?.sections[0];
 
     if (section?.type !== 'hero') throw new Error('expected a hero section');
-    expect(section.ctas).toEqual([]);
     expect(codes(result.repairs)).toContain('dangling_link_ref_dropped');
+    // The dangling target is gone, and the hero is not left with nothing to do: the header is two
+    // buttons over moving footage, so the backfill dresses it from the site's own routing. This
+    // fixture is a one-page site with nowhere to point, which is what the last resort is for.
+    expect(section.ctas.some((cta) => JSON.stringify(cta.target).includes('ghost'))).toBe(false);
+    expect(section.ctas).toHaveLength(2);
+    expect(codes(result.repairs)).toContain('hero_ctas_backfilled');
+  });
+
+  it('gives every hero two buttons, pointing at the pages the site actually has', () => {
+    const raw: unknown = makeStructure([
+      makePage('home', 'home', [{ ...heroSection('h1'), ctas: [] }]),
+      makePage('services', 'services', [{ ...heroSection('h2'), ctas: [] }]),
+      makePage('contact', 'contact', [{ ...heroSection('h3'), ctas: [] }]),
+    ]);
+
+    const result = normalizeStructure(raw, testContext);
+    for (const page of result.value?.pages ?? []) {
+      const section = page.sections[0];
+      if (section?.type !== 'hero') throw new Error('expected a hero section');
+      expect(section.ctas).toHaveLength(2);
+      // Services first, contact second: the order a visitor's intent runs in. Two buttons that
+      // lead to the same place are one button, so the second is never a copy of the first.
+      expect(section.ctas[0]?.target).toEqual({ kind: 'page', pageId: 'services' });
+      expect(section.ctas[1]?.target).toEqual({ kind: 'page', pageId: 'contact' });
+      expect(section.ctas[0]?.style).toBe('primary');
+      expect(section.ctas[1]?.style).toBe('secondary');
+    }
+  });
+
+  it('keeps the buttons the model chose and only fills the gap', () => {
+    const raw: unknown = makeStructure([
+      makePage('home', 'home', [
+        {
+          ...heroSection('h1'),
+          ctas: [{ target: { kind: 'whatsapp' }, style: 'ghost' }],
+        },
+      ]),
+      makePage('contact', 'contact', [heroSection('h2')]),
+    ]);
+
+    const result = normalizeStructure(raw, testContext);
+    const section = result.value?.pages[0]?.sections[0];
+
+    if (section?.type !== 'hero') throw new Error('expected a hero section');
+    expect(section.ctas).toHaveLength(2);
+    expect(section.ctas[0]).toEqual({ target: { kind: 'whatsapp', _: null }, style: 'ghost' });
+    expect(section.ctas[1]?.target).toEqual({ kind: 'page', pageId: 'contact' });
   });
 
   it('reports an unsalvageable document instead of throwing', () => {
