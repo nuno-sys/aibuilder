@@ -368,7 +368,12 @@ export function assignSectionBackgrounds(
   );
   if (usable.length === 0) return {};
 
-  const taken = new Set<string>();
+  // The footer's ground was chosen in the media step, before section ids existed, so the two
+  // cannot negotiate — but they can avoid each other from this side. The same photograph in a
+  // services band and again in the footer reads as a site that ran out of pictures.
+  const taken = new Set<string>(
+    manifest.footerMediaRefId === null ? [] : [manifest.footerMediaRefId],
+  );
   const backgrounds: Record<string, string> = {};
   for (const page of structure.pages) {
     const target = page.sections.find((section) => WANTS_GROUND.has(section.type));

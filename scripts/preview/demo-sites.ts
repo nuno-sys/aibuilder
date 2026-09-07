@@ -2111,10 +2111,66 @@ const HAMERSLAG: DemoSite = {
   }),
 };
 
+/* ── Photographic grounds ───────────────────────────────────────────────── */
+
+/**
+ * Section types that may carry a photographic ground. Mirrors `assemble.ts`'s own set.
+ *
+ * Deliberately short: the hero already carries full-bleed motion, and a page whose every band is a
+ * photograph reads as a slideshow rather than as a business.
+ */
+const WANTS_GROUND = new Set(['services_grid', 'contact_form', 'cta_band', 'booking']);
+
+/**
+ * Dresses a demo the way `assemble.ts` dresses a real site: at most one ground per page, on the
+ * first section that wants one, from the site's own landscape media, never the same asset twice.
+ *
+ * Done here rather than written into each demo literal because the RULE is what is worth
+ * previewing. A hand-placed background proves the CSS renders; running the same rule proves the
+ * product produces pages that look like this.
+ */
+function dress(site: DemoSite): DemoSite {
+  // Landscape photography only, and never an asset that has a job: the hero is the header, the
+  // share card carries the business name burnt into it, and the map is a map.
+  const spoken = new Set(
+    [site.heroRefId, site.heroPortraitRefId, site.ogRefId, site.mapRefId].filter(
+      (refId): refId is string => refId !== null,
+    ),
+  );
+  const usable = Object.values(site.doc.media)
+    .filter((asset) => asset.width > asset.height && !spoken.has(asset.refId))
+    .map((asset) => asset.refId);
+
+  // The footer closes the page on the same kind of footage the header opened it with, and it is
+  // chosen FIRST — in production it is picked in the media step, before section ids exist, and the
+  // section pass then avoids it. Same order here, or the demos would show a different rule.
+  const footerMediaRefId = usable[0] ?? null;
+
+  const taken = new Set<string>(footerMediaRefId === null ? [] : [footerMediaRefId]);
+  const sectionBackgrounds: Record<string, string> = {};
+  for (const page of site.doc.pages) {
+    const target = page.sections.find((section) => WANTS_GROUND.has(section.type));
+    if (target === undefined) continue;
+    const pick = usable.find((refId) => !taken.has(refId));
+    if (pick === undefined) break;
+    taken.add(pick);
+    sectionBackgrounds[target.id] = pick;
+  }
+
+  return {
+    ...site,
+    doc: {
+      ...site.doc,
+      chrome: { ...site.doc.chrome, footerMediaRefId },
+      sectionBackgrounds,
+    },
+  };
+}
+
 /* ── The catalogue ──────────────────────────────────────────────────────── */
 
 /** The four demo sites, one per Phase 1 design DNA, in archetype order. */
-export const DEMO_SITES: readonly DemoSite[] = [NEONKAAI, NUVOLA, ZILVERBERK, HAMERSLAG];
+export const DEMO_SITES: readonly DemoSite[] = [NEONKAAI, NUVOLA, ZILVERBERK, HAMERSLAG].map(dress);
 
 /** One demo site by key, or `undefined`. */
 export function demoSiteByKey(key: string): DemoSite | undefined {
