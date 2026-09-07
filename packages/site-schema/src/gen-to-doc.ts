@@ -6,6 +6,7 @@ import type { PageGen, PageRole, SiteStructureGen } from './gen/site-structure';
 import type {
   BlogPostDoc,
   ExternalLink,
+  HeroVideo,
   MediaAsset,
   PageDoc,
   PageLocaleDoc,
@@ -73,6 +74,17 @@ export interface GenToDocInput {
   readonly facts: SiteFacts;
   /** The media manifest, keyed by `refId`. */
   readonly media: Readonly<Record<string, MediaAsset>>;
+  /**
+   * The hero's motion layer, or `null`. Supplied by the media pipeline, never by the model.
+   *
+   * The poster lives in `media` and is required regardless — this only decides whether the header
+   * also moves.
+   */
+  readonly heroVideo: HeroVideo | null;
+  /** Photographic footer ground, by `refId`. Dropped if it is not in `media`. */
+  readonly footerMediaRefId: string | null;
+  /** Photographic grounds behind sections, by section id. Entries not in `media` are dropped. */
+  readonly sectionBackgrounds: Readonly<Record<string, string>>;
   /** The external-link allowlist, keyed by `refId`. https-only. */
   readonly externalLinks: Readonly<Record<string, ExternalLink>>;
   /** Resolved CSS custom properties from `site-kit`'s `tokens/resolve.ts`. */
@@ -412,11 +424,22 @@ export function genToDoc(input: GenToDocInput): GenToDocResult {
       footerStyle: structure.footerStyle,
       // WhatsApp is only ever offered when there is a number to send people to.
       whatsappEnabled: structure.whatsappEnabled && input.facts.whatsappE164 !== null,
+      // Dropped rather than carried through as a dangling id: `SiteDocSchema` rejects a reference
+      // that does not resolve, and a footer over its token ground is a valid design.
+      footerMediaRefId:
+        input.footerMediaRefId !== null && media[input.footerMediaRefId] !== undefined
+          ? input.footerMediaRefId
+          : null,
     },
     pages,
     copy,
     media,
     links,
+    heroVideo: input.heroVideo,
+    // Same rule as the footer: an unresolvable background is dropped, never rendered as a gap.
+    sectionBackgrounds: Object.fromEntries(
+      Object.entries(input.sectionBackgrounds).filter(([, refId]) => media[refId] !== undefined),
+    ),
     jsonLdInputs: structure.jsonLd,
     facts: input.facts,
     blog,

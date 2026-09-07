@@ -1,8 +1,11 @@
-import { industryByKey, mediaOriginalKey } from '@aibuilder/core';
+import { classifyLuminance, industryByKey, mediaOriginalKey } from '@aibuilder/core';
 import type { IndustryGroupKey, Intake } from '@aibuilder/core';
 import { shard, shardById } from '@aibuilder/db';
 import type { MediaAssetId, MediaAssetRow } from '@aibuilder/db';
 import type { MediaCandidate } from '@aibuilder/ai';
+import { HeroVideoSchema, LuminanceClassSchema } from '@aibuilder/site-schema';
+import type { LuminanceClass } from '@aibuilder/site-schema';
+import { DNA } from '@aibuilder/site-kit';
 import { z } from 'zod';
 
 import { putArtifact, runArtifactKey } from '../artifacts';
@@ -175,6 +178,14 @@ export const ResolvedMediaSchema = z.object({
   height: z.number().int().positive(),
   blurhash: z.string().max(120).nullable(),
   dominantColor: z.string().max(32).nullable(),
+  /**
+   * Measured from the decoded pixels by this step, never asked of the model.
+   *
+   * It decides which scrim goes over the image and which theme may use it at all. A model looking
+   * at a thumbnail can tell you a scene is "moody"; only the pixels tell you whether white text
+   * will survive on it.
+   */
+  luminance: LuminanceClassSchema.nullable(),
   altText: z.string().max(300).nullable(),
   credit: z.string().max(200).nullable(),
 });
@@ -193,6 +204,17 @@ export const MediaManifestSchema = z.object({
   ),
   /** What `genToDoc()` resolves refs against. Keyed by `refId`. */
   assets: z.record(z.string(), ResolvedMediaSchema),
+  /**
+   * The hero's motion layer, or `null` when nothing relevant enough was found.
+   *
+   * `null` is a complete outcome, not a hole: the hero poster is an ordinary entry in `assets` and
+   * is always present, so the header is a full-screen relevant still either way.
+   */
+  heroVideo: HeroVideoSchema.nullable(),
+  /** Photographic footer ground, luminance-matched to the theme, or `null` for the token ground. */
+  footerMediaRefId: z.string().min(1).max(64).nullable(),
+  /** Photographic grounds behind ordinary sections, keyed by section id. */
+  sectionBackgrounds: z.record(z.string(), z.string().min(1).max(64)),
 });
 
 /** The media manifest. */
@@ -309,6 +331,14 @@ const PexelsPhotoSchema = z.object({
   height: z.number().int().positive(),
   alt: z.string().nullable().optional(),
   photographer: z.string().optional(),
+  /**
+   * Pexels' own average colour for the photo, e.g. `#3A2E24`.
+   *
+   * The only luminance signal available here: a Worker cannot decode a JPEG, and the Images binding
+   * runs later in the queue consumer. Optional because it is absent on some older library entries,
+   * and an absent value classifies as `null` rather than as a guess.
+   */
+  avg_color: z.string().nullable().optional(),
   src: z.object({ original: z.string() }),
 });
 
@@ -321,6 +351,7 @@ const CachedPhotoSchema = z.object({
   height: z.number().int().positive(),
   alt: z.string(),
   credit: z.string(),
+  avgColor: z.string().nullable(),
   original: z.string().url(),
 });
 type CachedPhoto = z.infer<typeof CachedPhotoSchema>;
@@ -375,6 +406,7 @@ export async function searchStock(env: Env, query: string): Promise<readonly Cac
       height: photo.height,
       alt: (photo.alt ?? '').slice(0, 280),
       credit: photo.photographer === undefined ? 'Pexels' : `${photo.photographer} / Pexels`,
+      avgColor: photo.avg_color ?? null,
       original: photo.src.original,
     }));
   } catch {
@@ -490,6 +522,7 @@ function fromUpload(row: MediaAssetRow): {
       height: row.height,
       blurhash: row.blurhash,
       dominantColor: row.dominant_color,
+      luminance: classifyLuminance(row.dominant_color),
       altText: row.alt_text,
       credit: row.attribution,
     },
@@ -598,7 +631,8 @@ export async function runMediaStep(env: Env, ids: RunIds, intake: Intake): Promi
         width: rehosted.width,
         height: rehosted.height,
         blurhash: null,
-        dominantColor: null,
+        dominantColor: photo.avgColor,
+        luminance: classifyLuminance(photo.avgColor),
         altText: photo.alt.length > 0 ? photo.alt : null,
         credit: photo.credit,
       };
@@ -606,7 +640,23 @@ export async function runMediaStep(env: Env, ids: RunIds, intake: Intake): Promi
     }
   }
 
-  const manifest: MediaManifest = { candidates, assets };
+  // The theme is not resolved yet — `structure` runs after this step — but the DNA is, because it
+  // is a property of the INDUSTRY and the industry came in on the intake. That is enough to pick a
+  // footer ground whose luminance will match the site that gets built on top of it.
+  const expectedMode = expectedColorMode(intake);
+  const footerMediaRefId = pickFooterGround(assets, expectedMode);
+
+  const manifest: MediaManifest = {
+    candidates,
+    assets,
+    // Phase 3: the stock video search fills this. Until it does, `null` is a complete answer and
+    // not a hole — the hero poster is an ordinary asset and the header is a full-screen still.
+    heroVideo: null,
+    footerMediaRefId,
+    // Section ids do not exist yet: they are minted by the structure step. `assemble` assigns
+    // backgrounds once it has both the manifest and the page tree.
+    sectionBackgrounds: {},
+  };
   const ref = await putArtifact(env.BLOBS, runArtifactKey(ids.jobId, 'media'), manifest);
   return { manifest: ref, uploadCount, stockCount };
 }
@@ -618,4 +668,41 @@ function hexToBytes(hex: string): Uint8Array {
     bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
   }
   return bytes;
+}
+
+/* -- Luminance-matched grounds ---------------------------------------------------------------- */
+
+/**
+ * The colour mode this site will almost certainly be built in.
+ *
+ * Derived from the industry's design DNA rather than from the theme, because the media step runs
+ * BEFORE the structure step and there is no theme yet. The model may still shift the mode; a
+ * background whose luminance then disagrees is dropped at assembly rather than rendered wrong.
+ */
+export function expectedColorMode(intake: Intake): 'light' | 'dark' {
+  const industry = industryByKey(intake.industryKey);
+  if (industry === undefined || industry === null) return 'light';
+  return DNA[industry.dnaId].canonicalMode;
+}
+
+/**
+ * Picks a footer ground: landscape, and luminance-matched to the site being built.
+ *
+ * Returns `null` freely. A footer over its token ground is a finished design, and forcing a
+ * mismatched photo behind one is how footers become unreadable.
+ */
+export function pickFooterGround(
+  assets: Readonly<
+    Record<
+      string,
+      { readonly width: number; readonly height: number; readonly luminance: LuminanceClass | null }
+    >
+  >,
+  mode: 'light' | 'dark',
+): string | null {
+  for (const [refId, asset] of Object.entries(assets)) {
+    if (asset.width <= asset.height) continue;
+    if (asset.luminance === mode) return refId;
+  }
+  return null;
 }

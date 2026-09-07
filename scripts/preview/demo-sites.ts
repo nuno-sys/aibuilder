@@ -1,6 +1,7 @@
 import type {
   DnaId,
   LocaleCopy,
+  HeroVideo,
   MediaAsset,
   PageDoc,
   PageRole,
@@ -8,7 +9,9 @@ import type {
   SiteDoc,
 } from '@aibuilder/site-schema';
 import { parseSiteDocOrThrow } from '@aibuilder/site-schema';
+import { classifyLuminance } from '@aibuilder/core';
 import type { RenderedReview } from '@aibuilder/site-kit';
+import { DNA } from '@aibuilder/site-kit';
 import { resolveTheme } from '@aibuilder/site-kit';
 
 /**
@@ -169,6 +172,35 @@ function digestOf(seed: string): string {
   return out.slice(0, 64);
 }
 
+/**
+ * The hero's motion layer for one archetype.
+ *
+ * The R2 keys are the harness's own encoded files (`video.ts`); in production they are whatever the
+ * media pipeline re-hosted. `luminance` is the archetype's canonical mode — the footage is encoded
+ * from that DNA's own ramp, so the two cannot disagree.
+ */
+function heroVideoFor(archetype: DnaId): HeroVideo {
+  return {
+    landscape: {
+      av1R2Key: `_video/${archetype}-landscape.av1.webm`,
+      h264R2Key: `_video/${archetype}-landscape.h264.mp4`,
+      width: 1920,
+      height: 1080,
+      maxBytes: 1_400_000,
+    },
+    portrait: {
+      av1R2Key: `_video/${archetype}-portrait.av1.webm`,
+      h264R2Key: `_video/${archetype}-portrait.h264.mp4`,
+      width: 720,
+      height: 1280,
+      maxBytes: 600_000,
+    },
+    durationSeconds: 8,
+    luminance: DNA[archetype].canonicalMode,
+    credit: 'Plaatshouder — gegenereerd door de preview-harness',
+  };
+}
+
 /** The document's media manifest, derived from the harness's own asset plan. */
 function mediaManifest(
   assets: readonly DemoMedia[],
@@ -184,6 +216,9 @@ function mediaManifest(
       height: asset.height,
       blurhash: null,
       dominantColor,
+      // Measured with the same classifier production uses, so the demo exercises the real rule
+      // rather than a hand-written answer that could disagree with it.
+      luminance: classifyLuminance(dominantColor),
       altText: asset.alt,
       credit: null,
     };
@@ -327,7 +362,7 @@ const NEONKAAI_SECTIONS: Readonly<Record<string, readonly SectionGen[]>> = {
     {
       id: 'nk-agenda-hero',
       type: 'hero',
-      variant: 'type_centered',
+      variant: 'video_fullbleed',
       media: null,
       ctas: [{ target: { kind: 'external', refId: 'tickets' }, style: 'primary' }],
       showTrustline: false,
@@ -376,7 +411,7 @@ const NEONKAAI_SECTIONS: Readonly<Record<string, readonly SectionGen[]>> = {
     {
       id: 'nk-contact-hero',
       type: 'hero',
-      variant: 'image_split',
+      variant: 'video_fullbleed',
       media: { refId: 'entree', focalPoint: 'center' },
       ctas: [{ target: { kind: 'tel', _: null }, style: 'primary' }],
       showTrustline: false,
@@ -647,9 +682,12 @@ const NEONKAAI: DemoSite = {
       navStyle: 'centered_logo_slim',
       footerStyle: 'compact_2col',
       whatsappEnabled: true,
+      footerMediaRefId: null,
     },
     pages: NEONKAAI_PAGES,
     copy: { [NL]: NEONKAAI_COPY },
+    heroVideo: heroVideoFor('midnight_neon'),
+    sectionBackgrounds: {},
     media: mediaManifest(NEONKAAI_MEDIA, '#160f22'),
     links: {
       tickets: { href: 'https://tickets.example.com/club-neonkaai', rel: 'nofollow noopener' },
@@ -770,7 +808,7 @@ const NUVOLA_SECTIONS: Readonly<Record<string, readonly SectionGen[]>> = {
     {
       id: 'nr-hero',
       type: 'hero',
-      variant: 'image_split',
+      variant: 'video_fullbleed',
       media: { refId: 'hero', focalPoint: 'center' },
       ctas: [
         { target: { kind: 'page', pageId: 'nr-p-reserveren' }, style: 'primary' },
@@ -817,7 +855,7 @@ const NUVOLA_SECTIONS: Readonly<Record<string, readonly SectionGen[]>> = {
     {
       id: 'nr-menu-hero',
       type: 'hero',
-      variant: 'type_centered',
+      variant: 'video_fullbleed',
       media: null,
       ctas: [{ target: { kind: 'page', pageId: 'nr-p-reserveren' }, style: 'primary' }],
       showTrustline: false,
@@ -861,7 +899,7 @@ const NUVOLA_SECTIONS: Readonly<Record<string, readonly SectionGen[]>> = {
     {
       id: 'nr-res-hero',
       type: 'hero',
-      variant: 'image_offset_grid',
+      variant: 'video_fullbleed',
       media: { refId: 'terras', focalPoint: 'center' },
       ctas: [{ target: { kind: 'tel', _: null }, style: 'secondary' }],
       showTrustline: false,
@@ -1108,9 +1146,12 @@ const NUVOLA: DemoSite = {
       navStyle: 'logo_left_links_right',
       footerStyle: 'rich_4col',
       whatsappEnabled: true,
+      footerMediaRefId: null,
     },
     pages: NUVOLA_PAGES,
     copy: { [NL]: NUVOLA_COPY },
+    heroVideo: heroVideoFor('warm_trattoria'),
+    sectionBackgrounds: {},
     media: mediaManifest(NUVOLA_MEDIA, '#efe6d8'),
     links: {
       reserveren: {
@@ -1210,7 +1251,7 @@ const ZILVERBERK_SECTIONS: Readonly<Record<string, readonly SectionGen[]>> = {
     {
       id: 'zb-hero',
       type: 'hero',
-      variant: 'type_centered',
+      variant: 'video_fullbleed',
       media: { refId: 'hero', focalPoint: 'center' },
       ctas: [
         { target: { kind: 'page', pageId: 'zb-p-afspraak' }, style: 'primary' },
@@ -1282,7 +1323,7 @@ const ZILVERBERK_SECTIONS: Readonly<Record<string, readonly SectionGen[]>> = {
     {
       id: 'zb-afspraak-hero',
       type: 'hero',
-      variant: 'image_split',
+      variant: 'video_fullbleed',
       media: { refId: 'balie', focalPoint: 'center' },
       ctas: [{ target: { kind: 'tel', _: null }, style: 'primary' }],
       showTrustline: false,
@@ -1547,9 +1588,12 @@ const ZILVERBERK: DemoSite = {
       // A dental practice does not take patient questions over WhatsApp, so the widget is off.
       // This is also the demo that proves the chrome renders without it.
       whatsappEnabled: false,
+      footerMediaRefId: null,
     },
     pages: ZILVERBERK_PAGES,
     copy: { [NL]: ZILVERBERK_COPY },
+    heroVideo: heroVideoFor('clinical_trust'),
+    sectionBackgrounds: {},
     media: mediaManifest(ZILVERBERK_MEDIA, '#e7eef2'),
     links: {},
     jsonLdInputs: {
@@ -1665,7 +1709,7 @@ const HAMERSLAG_SECTIONS: Readonly<Record<string, readonly SectionGen[]>> = {
     {
       id: 'hs-hero',
       type: 'hero',
-      variant: 'image_offset_grid',
+      variant: 'video_fullbleed',
       media: { refId: 'hero', focalPoint: 'center' },
       ctas: [
         { target: { kind: 'tel', _: null }, style: 'primary' },
@@ -1719,7 +1763,7 @@ const HAMERSLAG_SECTIONS: Readonly<Record<string, readonly SectionGen[]>> = {
     {
       id: 'hs-wp-hero',
       type: 'hero',
-      variant: 'image_split',
+      variant: 'video_fullbleed',
       media: { refId: 'balie', focalPoint: 'center' },
       ctas: [{ target: { kind: 'tel', _: null }, style: 'primary' }],
       showTrustline: false,
@@ -1759,7 +1803,7 @@ const HAMERSLAG_SECTIONS: Readonly<Record<string, readonly SectionGen[]>> = {
     {
       id: 'hs-contact-hero',
       type: 'hero',
-      variant: 'type_centered',
+      variant: 'video_fullbleed',
       media: null,
       ctas: [{ target: { kind: 'tel', _: null }, style: 'primary' }],
       showTrustline: false,
@@ -1999,9 +2043,12 @@ const HAMERSLAG: DemoSite = {
       navStyle: 'minimal_burger',
       footerStyle: 'compact_2col',
       whatsappEnabled: true,
+      footerMediaRefId: null,
     },
     pages: HAMERSLAG_PAGES,
     copy: { [NL]: HAMERSLAG_COPY },
+    heroVideo: heroVideoFor('garage_steel'),
+    sectionBackgrounds: {},
     media: mediaManifest(HAMERSLAG_MEDIA, '#2b2d31'),
     links: {},
     jsonLdInputs: {

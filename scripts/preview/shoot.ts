@@ -308,6 +308,18 @@ async function shootPage(
       isMobile: viewport.name === 'mobile',
       hasTouch: viewport.name === 'mobile',
     });
+    /*
+      Headless Chromium in a sandbox reports `downlink` around 1.45 Mbps, just under the 1.5 floor
+      `js/site.ts` refuses below — so without this the hero video is correctly removed and every
+      screenshot shows a still. The refusal is right; the SANDBOX is what is unrepresentative. The
+      signal is overridden for capture only, and only here: nothing in the product changes.
+    */
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'connection', {
+        configurable: true,
+        get: () => ({ saveData: false, effectiveType: '4g', downlink: 10 }),
+      });
+    });
     const page = await context.newPage();
     const consoleErrors: string[] = [];
     page.on('console', (message) => {

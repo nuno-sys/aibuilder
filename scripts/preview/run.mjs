@@ -69,6 +69,8 @@ function bundle(command) {
       '--jsx-import-source=hono/jsx',
       ...Object.entries(ALIASES).map(([name, target]) => `--alias:${name}=${target}`),
       '--external:playwright',
+      // Resolves a binary path on disk at runtime; bundling it would break that lookup.
+      '--external:ffmpeg-static',
       '--sourcemap=inline',
       '--log-level=warning',
       `--outfile=${outfile}`,

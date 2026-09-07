@@ -17,6 +17,7 @@ export * from './intake';
 export * from './keys';
 export * from './lastmod';
 export * from './locales';
+export * from './luminance';
 export * from './publish';
 export * from './quality-gate';
 export * from './redact';

@@ -310,6 +310,16 @@ export async function runAssembleStep(
     blog: [...input.blog],
     facts: siteFactsFrom(input.intake),
     media,
+    heroVideo: input.manifest.heroVideo,
+    footerMediaRefId: input.manifest.footerMediaRefId,
+    // Assigned here rather than in the media step, which runs before section ids exist. The pick is
+    // made against the RESOLVED theme, so a background whose luminance disagrees with the mode the
+    // model actually chose is dropped instead of being rendered under unreadable copy.
+    sectionBackgrounds: assignSectionBackgrounds(
+      applied.structure,
+      input.manifest,
+      applied.structure.theme.colorMode,
+    ),
     // Empty in Phase 1: the only external URL onboarding collects is the Google Business Profile
     // link, which is emitted as a `sameAs` from `facts` and is never a link target the model can
     // choose (§8).
@@ -337,4 +347,36 @@ export async function runAssembleStep(
     warnings: findings.map(describe),
     issues: issues.map((issue) => `${issue.code}@${issue.path}: ${issue.message}`),
   };
+}
+
+/**
+ * Chooses which sections get a photographic ground.
+ *
+ * Deliberately conservative: the hero already carries full-bleed media, so a page whose every band
+ * is a photo reads as a slideshow rather than as a business. One ground per page, on the section
+ * most likely to benefit — the services grid or the contact block — and only when its luminance
+ * matches the mode the copy will be set in.
+ */
+export function assignSectionBackgrounds(
+  structure: SiteStructureGen,
+  manifest: MediaManifest,
+  colorMode: 'light' | 'dark',
+): Record<string, string> {
+  const WANTS_GROUND = new Set(['services_grid', 'contact_form', 'cta_band', 'booking']);
+  const usable = Object.values(manifest.assets).filter(
+    (asset) => asset.width > asset.height && asset.luminance === colorMode,
+  );
+  if (usable.length === 0) return {};
+
+  const taken = new Set<string>();
+  const backgrounds: Record<string, string> = {};
+  for (const page of structure.pages) {
+    const target = page.sections.find((section) => WANTS_GROUND.has(section.type));
+    if (target === undefined) continue;
+    const pick = usable.find((asset) => !taken.has(asset.refId));
+    if (pick === undefined) break;
+    taken.add(pick.refId);
+    backgrounds[target.id] = pick.refId;
+  }
+  return backgrounds;
 }

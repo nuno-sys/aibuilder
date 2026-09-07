@@ -8,7 +8,15 @@ import { renderPage } from '@aibuilder/site-kit';
 import type { HeroMedia, RenderContext, RenderOptions, ResolvedImage } from '@aibuilder/site-kit';
 import type { DemoSite } from './demo-sites';
 import { DEMO_SITES } from './demo-sites';
-import { ASSET_BASE, OUTPUT_DIR, iconUrl, imageUrl, writeAssets } from './media';
+import {
+  ASSET_BASE,
+  OUTPUT_DIR,
+  iconUrl,
+  imageUrl,
+  videoUrl,
+  writeAssets,
+  writeVideos,
+} from './media';
 
 /**
  * Renders every demo site to `.preview/`.
@@ -140,10 +148,20 @@ function heroOf(site: DemoSite, images: Readonly<Record<string, ResolvedImage>>)
   return {
     poster,
     portraitSources: portrait === undefined ? [] : [...portrait.sources],
-    // There is no hero video in this repository and the harness does not encode one. The
-    // `video_fullbleed` variant therefore renders as poster + scrim, which is exactly what it does
-    // in production before `js/site.ts` decides the connection has earned the bytes.
-    video: null,
+    /*
+      Real, encoded footage — see `video.ts`. Two sizes, because a phone must never be handed the
+      1920x1080 file: the portrait encode is roughly a quarter of the bytes AND fills a phone
+      viewport instead of being letterboxed into it. The poster is still the LCP element and the
+      video still mounts only after `js/site.ts` has seen LCP attributed to it.
+    */
+    video: {
+      desktopAv1: videoUrl(site.archetype, 'landscape', 'av1'),
+      desktopH264: videoUrl(site.archetype, 'landscape', 'h264'),
+      mobileAv1: videoUrl(site.archetype, 'portrait', 'av1'),
+      mobileH264: videoUrl(site.archetype, 'portrait', 'h264'),
+      width: 1920,
+      height: 1080,
+    },
   };
 }
 
@@ -340,6 +358,15 @@ function indexHtml(manifest: PreviewManifest): string {
 export async function renderAll(): Promise<PreviewManifest> {
   mkdirSync(OUTPUT_DIR, { recursive: true });
   const assets = writeAssets(DEMO_SITES);
+  // Cached on disk: four archetypes at two sizes in two codecs is minutes of encoding, and none of
+  // it changes unless a palette does.
+  const videos = writeVideos(DEMO_SITES);
+  const videoBytes = videos.reduce((total, entry) => total + entry.bytes, 0);
+  console.log(
+    `video: ${String(videos.length)} files (${String(Math.round(videoBytes / 1024))} kB) — ` +
+      `landscape ${String(Math.round((videos.find((v) => v.file.includes('-landscape.h264'))?.bytes ?? 0) / 1024))} kB ` +
+      `vs portrait ${String(Math.round((videos.find((v) => v.file.includes('-portrait.h264'))?.bytes ?? 0) / 1024))} kB per site`,
+  );
   const missingFonts = assets.fonts.filter((entry) => entry.source === null);
   console.log(
     `media: ${String(assets.files)} files (${String(Math.round(assets.bytes / 1024))} kB of generated SVG/PNG)`,

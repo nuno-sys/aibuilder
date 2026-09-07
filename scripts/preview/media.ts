@@ -1,11 +1,13 @@
 import { deflateSync } from 'node:zlib';
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ColorMode, DnaId } from '@aibuilder/site-schema';
 import { DNA, hexOf, resolveTheme } from '@aibuilder/site-kit';
 import type { DemoMedia, DemoSite } from './demo-sites';
 import { DEMO_SITES } from './demo-sites';
+import { encodeArchetype } from './video';
+import type { GradientType } from './video';
 
 /**
  * The placeholder imagery, synthesised.
@@ -641,6 +643,68 @@ export interface FontReport {
 /** URL path of one media asset. Absolute, because that is what a published page emits. */
 export function imageUrl(site: DemoSite, refId: string): string {
   return `${IMAGE_BASE}/${site.key}/${refId}.svg`;
+}
+
+/**
+ * The archetype palettes the hero footage is encoded in, dark ground first.
+ *
+ * Taken from each DNA's own ramp so the video is the site's colours in motion rather than a
+ * generic clip dropped behind them, and so the measured luminance of the footage agrees with the
+ * theme it plays under.
+ */
+export const VIDEO_PALETTES: Readonly<
+  Record<DnaId, { readonly stops: readonly string[]; readonly type: GradientType }>
+> = {
+  midnight_neon: { stops: ['0x0f0e17', '0x2a1f4d', '0x986bf6'], type: 'spiral' },
+  warm_trattoria: { stops: ['0xfcf5e9', '0xe8d9c3', '0xac412e'], type: 'radial' },
+  clinical_trust: { stops: ['0xf8fdff', '0xd7ecef', '0x187d87'], type: 'linear' },
+  garage_steel: { stops: ['0xf4f7fb', '0xd3dae4', '0xf7a830'], type: 'linear' },
+};
+
+/** URL path of one hero video file. */
+export function videoUrl(
+  archetype: DnaId,
+  role: 'landscape' | 'portrait',
+  codec: 'av1' | 'h264',
+): string {
+  const ext = codec === 'av1' ? 'av1.webm' : 'h264.mp4';
+  return `${IMAGE_BASE}/_video/${archetype}-${role}.${ext}`;
+}
+
+/**
+ * Encodes the hero footage for every archetype in use and copies it under the shared media root.
+ *
+ * Cached on disk between runs: encoding four archetypes at two sizes in two codecs takes minutes,
+ * and nothing about it changes unless the palettes do.
+ */
+export function writeVideos(
+  sites: readonly DemoSite[] = DEMO_SITES,
+  force = false,
+): readonly { readonly file: string; readonly bytes: number }[] {
+  const cache = path.join(ROOT, '.preview', '_video-cache');
+  const outDir = path.join(SHARED_DIR, IMAGE_BASE.replace(/^\//u, ''), '_video');
+  mkdirSync(outDir, { recursive: true });
+  const written: { file: string; bytes: number }[] = [];
+  const seen = new Set<DnaId>();
+  for (const site of sites) {
+    if (seen.has(site.archetype)) continue;
+    seen.add(site.archetype);
+    const palette = VIDEO_PALETTES[site.archetype];
+    for (const encoded of encodeArchetype(
+      cache,
+      site.archetype,
+      palette.stops,
+      palette.type,
+      force,
+    )) {
+      for (const source of [encoded.av1File, encoded.h264File]) {
+        const target = path.join(outDir, path.basename(source));
+        copyFileSync(source, target);
+        written.push({ file: path.basename(source), bytes: statSync(target).size });
+      }
+    }
+  }
+  return written;
 }
 
 /** URL path of one of a site's icons. */

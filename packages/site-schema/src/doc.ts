@@ -179,6 +179,48 @@ export type SiteFacts = z.infer<typeof SiteFactsSchema>;
 
 /* -- Resolution maps ----------------------------------------------------- */
 
+/**
+ * Whether a still reads as light or dark.
+ *
+ * Measured from the pixels by the media pipeline, never guessed and never asked of the model: it
+ * decides which scrim the renderer paints and which footage a theme is allowed to use, and a wrong
+ * answer is white text on a white frame. `light` means the image is bright and wants dark ink.
+ */
+export const LuminanceClassSchema = z.enum(['light', 'dark']);
+export type LuminanceClass = z.infer<typeof LuminanceClassSchema>;
+
+/** One encoded rendition of a video, by container. Both are the same footage at the same size. */
+export const VideoRenditionSchema = z.object({
+  /** AV1-in-WebM. First source, so a modern browser never downloads the H.264. */
+  av1R2Key: z.string().min(1).max(512),
+  /** H.264-in-MP4. The universal fallback, and the only thing older Safari will play. */
+  h264R2Key: z.string().min(1).max(512),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  /** Bytes of the LARGER rendition. The publish budget asserts against this. */
+  maxBytes: z.number().int().positive(),
+});
+export type VideoRendition = z.infer<typeof VideoRenditionSchema>;
+
+/**
+ * The hero's motion layer.
+ *
+ * Two encodes, not one. A phone getting the 1920x1080 desktop file is the entire reason background
+ * video has a bad reputation; a 720x1280 portrait encode at a tighter CRF is a fraction of the
+ * bytes AND fills a phone screen properly instead of being letterboxed into it.
+ */
+export const HeroVideoSchema = z.object({
+  landscape: VideoRenditionSchema,
+  portrait: VideoRenditionSchema,
+  /** Seconds. The pipeline trims to a short loop; a long clip is bytes nobody watches. */
+  durationSeconds: z.number().positive().max(30),
+  /** Measured from the poster frame. Drives the scrim and the theme match. */
+  luminance: LuminanceClassSchema,
+  /** Required by the stock provider's terms. Rendered in the footer, never suppressed. */
+  credit: z.string().max(200).nullable(),
+});
+export type HeroVideo = z.infer<typeof HeroVideoSchema>;
+
 /** One image or video in the site's media manifest, after the pipeline has run. */
 export const MediaAssetSchema = z.object({
   refId: z.string().min(1).max(64),
@@ -188,6 +230,12 @@ export const MediaAssetSchema = z.object({
   height: z.number().int().positive(),
   blurhash: z.string().max(120).nullable(),
   dominantColor: HexColor.nullable(),
+  /**
+   * Measured, not declared. A background image whose luminance disagrees with the theme it is
+   * placed behind is the one media defect that makes text unreadable rather than merely ugly, so
+   * the renderer picks the scrim from this and the pipeline refuses a mismatch it cannot scrim.
+   */
+  luminance: LuminanceClassSchema.nullable(),
   /**
    * Written by the media pipeline, not by the model.
    * Phase 2: alt text becomes a per-locale slot once the editor can translate it.
@@ -295,16 +343,62 @@ export const SiteDocSchema = z
       navStyle: NavStyle,
       footerStyle: FooterStyle,
       whatsappEnabled: z.boolean(),
+      /**
+       * A photographic footer ground, luminance-matched to the theme.
+       *
+       * `null` is a legitimate answer, not a failure: a footer over a flat token ground is a valid
+       * design. What is NOT allowed anywhere in this document is a media ref that resolves to
+       * nothing — the renderer draws the token ground, never an empty box.
+       */
+      footerMediaRefId: z.string().min(1).max(64).nullable(),
     }),
     pages: z.array(PageDocSchema).min(1),
     copy: z.record(z.string(), LocaleCopySchema),
     media: z.record(z.string(), MediaAssetSchema),
+    /**
+     * The hero's motion layer, or `null` when the pipeline found nothing it would stand behind.
+     *
+     * Null is not an empty header. The poster is a separate, always-present image in `media`, and
+     * it is the LCP element whether or not this is set — so a site with no video still opens on a
+     * full-screen, relevant still rather than on a grey box.
+     */
+    heroVideo: HeroVideoSchema.nullable(),
+    /**
+     * Photographic grounds behind ordinary sections, keyed by section id.
+     *
+     * Assigned by the MEDIA PIPELINE, not by the model — which is why it lives here and not on the
+     * section union. The model decides what a page says; whether a services band can carry a photo
+     * behind it is a question about the photo (does one exist, does its luminance match the tone it
+     * will sit on), and the model cannot see the photo.
+     */
+    sectionBackgrounds: z.record(z.string(), z.string().min(1).max(64)),
     links: z.record(z.string(), ExternalLinkSchema),
     jsonLdInputs: JsonLdInputsGen,
     facts: SiteFactsSchema,
     blog: z.array(BlogPostDocSchema),
   })
   .superRefine((doc, ctx) => {
+    // Every media reference must resolve. A background that points at nothing renders as an empty
+    // band, which is precisely the "lege sectie" this document is designed to make impossible.
+    if (
+      doc.chrome.footerMediaRefId !== null &&
+      doc.media[doc.chrome.footerMediaRefId] === undefined
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['chrome', 'footerMediaRefId'],
+        message: `footer media "${doc.chrome.footerMediaRefId}" is not in the media manifest`,
+      });
+    }
+    for (const [sectionId, refId] of Object.entries(doc.sectionBackgrounds)) {
+      if (doc.media[refId] === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['sectionBackgrounds', sectionId],
+          message: `background "${refId}" is not in the media manifest`,
+        });
+      }
+    }
     const enabled = new Set<string>(doc.locales.enabled);
     if (!enabled.has(doc.locales.default)) {
       ctx.addIssue({

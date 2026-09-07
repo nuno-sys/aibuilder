@@ -22,7 +22,6 @@ import {
   CTA_BAND_VARIANTS,
   FAQ_VARIANTS,
   GALLERY_VARIANTS,
-  HERO_VARIANTS,
   MAP_HOURS_VARIANTS,
   MENU_ITEM_TAGS,
   MENU_VARIANTS,
@@ -615,7 +614,12 @@ function normalizeSection(
       return {
         id,
         type: 'hero',
-        variant: pickEnum(record.variant, HERO_VARIANTS, 'image_split', log, `${path}.variant`),
+        // Every hero is the full-screen motion header, on every page and every breakpoint. This is
+        // a PRODUCT decision enforced deterministically rather than asked of the model: the header
+        // is the thing the site is judged on in the first second, and a model that occasionally
+        // picks a quieter variant produces a catalogue of sites that are quietly inconsistent.
+        // The other three variants stay in the enum because the editor still offers them.
+        variant: 'video_fullbleed',
         media: media(),
         ctas: parseCtas(record.ctas, log, `${path}.ctas`),
         showTrustline: pickBoolean(record.showTrustline, false, log, `${path}.showTrustline`),

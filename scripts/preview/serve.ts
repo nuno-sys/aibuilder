@@ -36,6 +36,10 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.svg': 'image/svg+xml; charset=utf-8',
   '.png': 'image/png',
   '.woff2': 'font/woff2',
+  // The hero footage. `type` on a <source> is matched against the DECLARED string, so serving a
+  // WebM as octet-stream makes the browser skip the AV1 rendition and fall through to H.264.
+  '.webm': 'video/webm',
+  '.mp4': 'video/mp4',
   '.json': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',

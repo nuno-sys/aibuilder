@@ -39,6 +39,7 @@ export function siteDocFixture(): SiteDoc {
       navStyle: 'logo_left_links_right',
       footerStyle: 'compact_2col',
       whatsappEnabled: false,
+      footerMediaRefId: null,
     },
     pages: [
       {
@@ -122,6 +123,8 @@ export function siteDocFixture(): SiteDoc {
         'page.p_contact.nav.label': 'Contact',
       },
     },
+    heroVideo: null,
+    sectionBackgrounds: {},
     media: {
       m1: {
         refId: 'm1',
@@ -131,6 +134,7 @@ export function siteDocFixture(): SiteDoc {
         height: 800,
         blurhash: null,
         dominantColor: null,
+        luminance: 'dark',
         altText: null,
         credit: null,
       },
@@ -142,6 +146,7 @@ export function siteDocFixture(): SiteDoc {
         height: 800,
         blurhash: null,
         dominantColor: null,
+        luminance: 'dark',
         altText: null,
         credit: null,
       },

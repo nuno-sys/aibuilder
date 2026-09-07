@@ -12,12 +12,24 @@
  *
  * Nothing here is optional to understand:
  *
- *  - **The connection gate defaults to "unknown", not to "fast".** `navigator.connection` does not
- *    exist in Safari or Firefox, so a permissive default would wave through every iPhone on a
- *    train. Unknown means desktop only, and only above 768 px. That one line is the difference
- *    between a mobile budget that holds and one that does not.
- *  - **LCP must already be attributed to the poster** before the video mounts. Where the API does
- *    not exist we cannot observe it, so we assume it happened rather than blocking forever.
+ *  - **The connection gate refuses on evidence, never on absence.** `saveData`, a sub-4g
+ *    `effectiveType` and a downlink under 1.5 Mbps each remove the video outright. What it does
+ *    NOT do any more is refuse when `navigator.connection` is simply missing: that API does not
+ *    exist in Safari, so the old "unknown means desktop only" rule meant the header never moved on
+ *    a single iPhone — the majority of the mobile traffic this product is built for. Mobile is
+ *    affordable because it gets its OWN encode: a 720x1280 portrait file at a tighter CRF, not the
+ *    1920x1080 desktop one letterboxed into a phone. Send the right file and the gate can be
+ *    honest; send the wrong file and no gate saves you.
+ *  - **`deviceMemory` under 2 GB still refuses.** That is a decode-cost guard for genuinely weak
+ *    hardware, not a proxy for "is a phone" — 4 GB excluded most mid-range Android.
+ *  - **LCP must already be attributed** before the video mounts — but the wait is BOUNDED, and that
+ *    bound is load-bearing. The poster is usually the LCP element; it is not always. A short
+ *    headline over a hero can hand LCP to the `<h1>` instead, and the original unbounded
+ *    `seen ? mount() : retry` then span forever and the header never moved — the product's
+ *    headline feature, silently absent, on exactly the pages where the copy is strongest. After
+ *    2.5 s we mount regardless: LCP has been attributed to *something* by then, and a transparent,
+ *    later-painting, intrinsically-smaller video cannot take an attribution away retroactively.
+ *    Where the API does not exist at all we assume it happened rather than blocking.
  *  - **`prefers-reduced-motion` is checked first and never overridden**, including a live change
  *    after load.
  *  - **Turnstile is injected on the first `focusin` inside a form**, so it never touches initial
@@ -25,7 +37,7 @@
  */
 
 /** The hero video attach. ~1 kB. Runs only on a page that has a hero video element. */
-const HERO_VIDEO = `(()=>{const v=document.querySelector('.hero__video'),img=document.querySelector('.hero__poster');if(!v||!img)return;const mq=matchMedia('(prefers-reduced-motion: reduce)');if(mq.matches){v.remove();return}const c=navigator.connection;if(c){if(c.saveData===true){v.remove();return}if(c.effectiveType&&!/^(4g|5g)$/.test(c.effectiveType)){v.remove();return}if(typeof c.downlink==='number'&&c.downlink<1.5){v.remove();return}}else if(innerWidth<768){v.remove();return}if(typeof navigator.deviceMemory==='number'&&navigator.deviceMemory<4){v.remove();return}let seen=false;try{new PerformanceObserver(l=>{for(const e of l.getEntries())if(e.element===img)seen=true}).observe({type:'largest-contentful-paint',buffered:true})}catch{seen=true}const mount=()=>{if(document.visibilityState!=='visible')return;const p=innerWidth<768,d=v.dataset,add=(s,t)=>{if(!s)return;const e=document.createElement('source');e.src=s;e.type=t;v.appendChild(e)};add(p?d.srcMobileAv1:d.srcDesktopAv1,'video/webm; codecs="av01.0.05M.08"');add(p?d.srcMobileH264:d.srcDesktopH264,'video/mp4; codecs="avc1.640028"');v.load();v.play().then(()=>requestAnimationFrame(()=>{v.dataset.ready='1'})).catch(()=>v.remove())};const start=()=>{const go=()=>seen?mount():setTimeout(go,250);'requestIdleCallback'in window?requestIdleCallback(go,{timeout:2500}):setTimeout(go,800)};if(document.prerendering){document.addEventListener('prerenderingchange',()=>addEventListener('load',start,{once:true}),{once:true})}else{addEventListener('load',start,{once:true})}mq.addEventListener('change',e=>{if(e.matches){v.pause();v.remove()}});const io=new IntersectionObserver(([e])=>{if(!v.isConnected)return io.disconnect();e.isIntersecting?v.play().catch(()=>{}):v.pause()});io.observe(v)})();`;
+const HERO_VIDEO = `(()=>{const v=document.querySelector('.hero__video'),img=document.querySelector('.hero__poster');if(!v||!img)return;const mq=matchMedia('(prefers-reduced-motion: reduce)');if(mq.matches){v.remove();return}const c=navigator.connection;if(c){if(c.saveData===true){v.remove();return}if(c.effectiveType&&!/^(4g|5g)$/.test(c.effectiveType)){v.remove();return}if(typeof c.downlink==='number'&&c.downlink<1.5){v.remove();return}}if(typeof navigator.deviceMemory==='number'&&navigator.deviceMemory<2){v.remove();return}let seen=false;try{new PerformanceObserver(l=>{for(const e of l.getEntries())if(e.element===img)seen=true}).observe({type:'largest-contentful-paint',buffered:true})}catch{seen=true}const mount=()=>{if(document.visibilityState!=='visible')return;const p=innerWidth<768,d=v.dataset,add=(s,t)=>{if(!s)return;const e=document.createElement('source');e.src=s;e.type=t;v.appendChild(e)};add(p?d.srcMobileAv1:d.srcDesktopAv1,'video/webm; codecs="av01.0.05M.08"');add(p?d.srcMobileH264:d.srcDesktopH264,'video/mp4; codecs="avc1.640028"');v.load();v.play().then(()=>requestAnimationFrame(()=>{v.dataset.ready='1'})).catch(()=>v.remove())};const start=()=>{const t0=Date.now(),go=()=>seen||Date.now()-t0>2500?mount():setTimeout(go,250);'requestIdleCallback'in window?requestIdleCallback(go,{timeout:2500}):setTimeout(go,800)};if(document.prerendering){document.addEventListener('prerenderingchange',()=>addEventListener('load',start,{once:true}),{once:true})}else{addEventListener('load',start,{once:true})}mq.addEventListener('change',e=>{if(e.matches){v.pause();v.remove()}});const io=new IntersectionObserver(([e])=>{if(!v.isConnected)return io.disconnect();e.isIntersecting?v.play().catch(()=>{}):v.pause()});io.observe(v)})();`;
 
 /**
  * The mobile menu. ~180 B.

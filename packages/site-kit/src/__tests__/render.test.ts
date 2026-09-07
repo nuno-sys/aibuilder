@@ -247,10 +247,34 @@ describe('the inline runtime', () => {
     expect(bytes).toBeLessThanOrEqual(SITE_JS_CEILING);
   });
 
-  it('defaults an unknown connection to poster-only on phones', () => {
-    // Safari and Firefox expose no Network Information API, so a permissive default would wave
-    // through every iPhone on a train. This is the one line that makes the mobile budget hold.
-    expect(SITE_JS).toContain('else if(innerWidth<768){v.remove();return}');
+  it('refuses the video on evidence of a slow link, never on a missing API', () => {
+    // The three refusals that must survive any change to this policy. Each is a real condition,
+    // reported by the client, that makes downloading a background video the wrong thing to do.
+    expect(SITE_JS).toContain('c.saveData===true');
+    expect(SITE_JS).toContain('!/^(4g|5g)$/.test(c.effectiveType)');
+    expect(SITE_JS).toContain('c.downlink<1.5');
+
+    // What must NOT come back: refusing simply because the Network Information API is absent.
+    // Safari does not implement it, so that rule meant the header never moved on any iPhone — the
+    // majority of the mobile traffic this product exists for. Mobile is paid for with its own
+    // smaller encode, selected below, not by refusing to play at all.
+    expect(SITE_JS).not.toContain('else if(innerWidth<768){v.remove();return}');
+    expect(SITE_JS).toContain('d.srcMobileAv1');
+    expect(SITE_JS).toContain('d.srcMobileH264');
+  });
+
+  it('bounds the wait for LCP, so a text LCP does not mean no video at all', () => {
+    // The poster is usually the largest paint. It is not always: a short headline over a hero can
+    // take the attribution, and an unbounded `seen ? mount() : retry` then never mounts. Measured
+    // in a real browser on a real rendered page — the h1 won, and the header stayed still.
+    expect(SITE_JS).toContain('Date.now()-t0>2500');
+  });
+
+  it('never plays over prefers-reduced-motion, before or after load', () => {
+    // Checked first, and re-checked on change: a user who turns motion off mid-session gets the
+    // video removed, not merely paused.
+    expect(SITE_JS).toContain("matchMedia('(prefers-reduced-motion: reduce)')");
+    expect(SITE_JS).toContain("mq.addEventListener('change'");
   });
 
   it('checks the motion preference first and honours a later change', () => {

@@ -362,6 +362,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@aibuilder/site-schema':
+        specifier: workspace:*
+        version: link:../site-schema
       ulid:
         specifier: ^3.0.2
         version: 3.0.2

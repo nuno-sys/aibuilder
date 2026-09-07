@@ -169,6 +169,7 @@ function media(refId: string, hash: string): MediaAsset {
     height: 800,
     blurhash: null,
     dominantColor: '#3a2a1c',
+    luminance: 'dark',
     altText: HOSTILE,
     credit: null,
   };
@@ -286,13 +287,20 @@ export function hostileDoc(options: FixtureOptions = {}): SiteDoc {
       ...options.theme,
     },
     locales: { default: 'nl', enabled: ['nl', 'de'] },
-    chrome: { navStyle: 'logo_left_links_right', footerStyle: 'rich_4col', whatsappEnabled: true },
+    chrome: {
+      navStyle: 'logo_left_links_right',
+      footerStyle: 'rich_4col',
+      whatsappEnabled: true,
+      footerMediaRefId: null,
+    },
     pages,
     copy: {
       nl: hostileCopy(pages, options.reverseCopyOrder === true),
       de: hostileCopy(pages, false),
     },
     media: Object.fromEntries(mediaEntries),
+    heroVideo: null,
+    sectionBackgrounds: {},
     links: LINKS,
     jsonLdInputs: {
       schemaOrgType: 'Restaurant',
@@ -358,6 +366,7 @@ const IMAGE = {
   alt: HOSTILE,
   focal: '50% 50%',
   dominantColor: '#3a2a1c',
+  luminance: 'dark',
 } as const;
 
 /** A `RenderContext` with every injected capability present. */
