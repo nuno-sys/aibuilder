@@ -80,8 +80,13 @@ jobs:
       # 80 MB ffmpeg binary and leaves Playwright and the four font families behind, which this job
       # has no use for. Five seconds, and it is the exact binary the pipeline is developed against:
       # ffmpeg 7.0.2 static, with libaom-av1, libx264 and libwebp all present.
+      # `working-directory`, not `npm ci --prefix`: --prefix only moves where packages are WRITTEN.
+      # `npm ci` still looks for the lockfile in the current directory, finds the repo root — which
+      # has pnpm-lock.yaml and no package-lock.json — and exits EUSAGE. (`--dry-run` does not
+      # reproduce that, which is how it got past a check once already.)
       - name: Install ffmpeg
-        run: npm ci --prefix scripts/preview --omit=dev
+        working-directory: scripts/preview
+        run: npm ci --omit=dev
 
       - name: Check the key is present
         run: |

@@ -52,7 +52,13 @@ const ROOT = path.resolve(HERE, '..', '..');
 const SOURCES = path.join(HERE, 'sources');
 const FFMPEG = path.join(ROOT, 'scripts/preview/node_modules/ffmpeg-static/ffmpeg');
 
-const API = 'https://api.pexels.com/videos/search';
+/**
+ * Overridable so the script can be exercised against a stub.
+ *
+ * Not a feature for production — it exists because the alternative is discovering a parsing or
+ * slot-filling bug an hour into a run that has already downloaded half a gigabyte.
+ */
+const API = `${process.env.PEXELS_API_BASE ?? 'https://api.pexels.com'}/videos/search`;
 
 /** Kept in step with `ingest.mjs` and `packages/core/src/luminance.ts`. */
 const LUMINANCE_BOUNDARY = 0.32;
