@@ -36,8 +36,13 @@
 
   // The client bundle. Workers Static Assets rather than Pages (DECISIONS §D3): one deployment
   // primitive across every deployable in this repo.
+  //
+  // `dist/client`, because `react-router.config.ts` sets `buildDirectory: 'dist'` — React Router's
+  // own default is `build/`, and this field was left on it. A stale path here is not a build error:
+  // wrangler reports "the directory does not exist" at DEPLOY time, and if a `build/` directory
+  // ever existed it would have shipped whatever was in it instead.
   "assets": {
-    "directory": "./build/client",
+    "directory": "./dist/client",
     "binding": "ASSETS",
     // The Worker runs first on every path, because `/` must resolve a session before it decides
     // whether the dashboard or the login page is the answer.
