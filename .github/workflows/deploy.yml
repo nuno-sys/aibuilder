@@ -25,7 +25,11 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    # THE DEFAULT BRANCH, whatever it is called. This repository's is currently
+    # `claude/ai-website-builder-saas-6uenty` and there is no `main` at all — a trigger on `main`
+    # alone would have meant a workflow that never once fired. `main` stays listed so that renaming
+    # or creating it later needs no change here.
+    branches: [main, claude/ai-website-builder-saas-6uenty]
   workflow_dispatch:
 
 permissions:
