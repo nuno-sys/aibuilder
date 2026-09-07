@@ -20,6 +20,14 @@ on:
 permissions:
   contents: read
 
+env:
+  # Wrangler asks questions when it thinks a human is watching. `CI` tells it otherwise; the
+  # bootstrap script also caps every invocation, because a prompt on a stdin that never answers is
+  # a step that hangs until the runner gives up, with nothing in the log to say why.
+  CI: "1"
+  WRANGLER_SEND_METRICS: "false"
+  DO_NOT_TRACK: "1"
+
 concurrency:
   group: bootstrap
 

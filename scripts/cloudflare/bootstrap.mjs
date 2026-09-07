@@ -39,12 +39,25 @@ const JURISDICTION = 'eu';
 /** The Secrets Store this account's Worker secrets live in. One store, many secrets. */
 const SECRETS_STORE = 'aibuilder';
 
+/**
+ * One wrangler invocation, and it cannot outlive its usefulness.
+ *
+ * `timeout` is the load-bearing option. Without it a subcommand that decides to ask a question —
+ * a beta feature gate, a consent prompt, an account picker — blocks on a stdin that will never
+ * produce anything, and the job sits at that step until the runner's own limit kills it with no
+ * output at all. That happened on the first run: eight minutes on a step that takes about one.
+ * `CI=1` asks wrangler not to be interactive in the first place; the timeout is what makes it true
+ * whether or not wrangler agrees.
+ */
 function wrangler(argv, { capture = true } = {}) {
   return execFileSync('pnpm', ['exec', 'wrangler', ...argv], {
     cwd: ROOT,
     encoding: 'utf8',
     stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     maxBuffer: 32 * 1024 * 1024,
+    timeout: 90_000,
+    killSignal: 'SIGKILL',
+    env: { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' },
   });
 }
 
@@ -53,10 +66,14 @@ function wrangler(argv, { capture = true } = {}) {
  * races another run), returning `null` rather than throwing.
  */
 function tryWrangler(argv) {
+  const started = Date.now();
   try {
     return wrangler(argv);
   } catch {
     return null;
+  } finally {
+    // Printed for every call, because the only thing worse than a slow step is a silent one.
+    console.log(`    wrangler ${argv.join(' ')} — ${String(Date.now() - started)} ms`);
   }
 }
 
