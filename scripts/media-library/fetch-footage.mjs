@@ -80,6 +80,9 @@ const PER_LUMINANCE = 2;
  */
 const MAX_DOWNLOADS_PER_GROUP = 16;
 
+/** The extra downloads the bright fallback wave may spend on a light shortfall. */
+const FALLBACK_DOWNLOADS = 10;
+
 /**
  * How many results to ask Pexels for per query.
  *
@@ -107,22 +110,36 @@ const MAX_SECONDS = 45;
  * `--force --groups=<group>`.
  */
 const QUERIES = {
-  food_drink: ['restaurant interior evening candlelight', 'bright cafe morning coffee counter'],
-  beauty: ['barber shop dark interior', 'hair salon daylight bright'],
-  health: ['physiotherapy treatment room calm', 'bright medical clinic reception'],
-  sport: ['gym weights training dark', 'yoga studio morning light'],
-  trades: ['welding workshop sparks', 'carpenter workshop daylight wood'],
-  automotive: ['car detailing garage night', 'auto repair workshop daylight'],
-  retail: ['boutique shop evening lights', 'bright retail store interior'],
-  professional: ['modern office night city window', 'bright office workspace daylight'],
-  events: ['wedding reception evening lights', 'event venue daylight flowers'],
-  education: ['library books reading lamp', 'bright classroom daylight'],
-  real_estate: ['modern house exterior evening', 'bright living room interior window'],
-  travel: ['city street night travel', 'coastline daylight aerial'],
-  pets: ['dog portrait dark background', 'pet grooming daylight bright'],
-  crafts: ['pottery studio hands clay', 'craft workshop daylight handmade'],
+  food_drink: ['restaurant interior evening candlelight', 'white cafe sunlight window bright'],
+  beauty: ['barber shop dark interior', 'white salon interior sunlight bright'],
+  health: ['physiotherapy treatment room calm', 'white clinic interior bright daylight'],
+  sport: ['gym weights training dark', 'white yoga studio sunlight bright'],
+  trades: ['welding workshop sparks', 'white workshop sunlight bright wood'],
+  automotive: ['car detailing garage night', 'white car showroom bright sunlight'],
+  retail: ['boutique shop evening lights', 'white store interior bright sunlight'],
+  professional: ['modern office night city window', 'white office sunlight bright minimal'],
+  events: ['wedding reception evening lights', 'white wedding flowers sunlight bright'],
+  education: ['library books reading lamp', 'white classroom sunlight bright'],
+  real_estate: ['modern house exterior evening', 'white living room sunlight bright window'],
+  travel: ['city street night travel', 'white sand beach sunlight bright sky'],
+  pets: ['dog portrait dark background', 'white dog grooming sunlight bright'],
+  crafts: ['pottery studio hands clay', 'white craft studio sunlight bright linen'],
 };
 
+/**
+ * The last resort for a group that still owes a LIGHT clip, and why one is needed at all.
+ *
+ * `LUMINANCE_BOUNDARY` is 0.32 in LINEARISED light, which is a far higher bar than it reads as:
+ * mid-grey (#808080) measures 0.216 and counts as dark. A clip only measures light if it is close
+ * to #a0a0a0 or brighter — white walls, blown-out windows, snow, sand, overcast sky. The first
+ * version of the light queries above asked for "bright" interiors, which is not the same thing at
+ * all, and five groups came back with zero usable light footage after sixteen downloads each.
+ *
+ * So when a group's own light query has not delivered, it is asked one more question, in the only
+ * vocabulary the boundary actually responds to. It runs ONLY for the light shortfall, and only
+ * after the group's own queries have had their turn.
+ */
+const BRIGHT_FALLBACK = 'white minimal bright overexposed daylight';
 /**
  * The marketing site's own header.
  *
@@ -344,31 +361,24 @@ async function fill(group, queries, want) {
     }
   }
 
-  const perQuery = [];
-  for (const query of queries) {
-    const usable = [];
-    for (const video of await search(query, CANDIDATES_PER_QUERY)) {
-      const duration = Number(video.duration ?? 0);
-      if (duration < MIN_SECONDS || duration > MAX_SECONDS) continue;
-      const file = bestFile(video);
-      if (file !== null) usable.push({ video, file });
-    }
-    perQuery.push(usable);
-  }
-
-  // Round-robin across the queries rather than draining the first. The download budget is what
-  // makes this matter: a group whose dark query happens to return fifteen usable clips would spend
-  // all twelve downloads there, never reach the light query, and report an unfillable light slot
-  // that was only ever unfilled because it was never asked.
-  const byId = new Map();
-  for (let i = 0; i < Math.max(...perQuery.map((q) => q.length), 0); i += 1) {
-    for (const usable of perQuery) {
-      const candidate = usable[i];
-      if (candidate !== undefined && !byId.has(candidate.video.id)) {
-        byId.set(candidate.video.id, candidate);
+  const seen = new Set();
+  const wave = async (waveQueries, budget) => {
+    const perQuery = [];
+    for (const query of waveQueries) {
+      const usable = [];
+      for (const video of await search(query, CANDIDATES_PER_QUERY)) {
+        const duration = Number(video.duration ?? 0);
+        if (duration < MIN_SECONDS || duration > MAX_SECONDS) continue;
+        if (seen.has(video.id)) continue;
+        const file = bestFile(video);
+        if (file !== null) usable.push({ video, file });
       }
+      perQuery.push(usable);
     }
-  }
+    return { perQuery, budget };
+  };
+
+  const waves = [await wave(queries, MAX_DOWNLOADS_PER_GROUP)];
 
   // The half-inspected candidate lives at the SOURCES root, never inside a group directory.
   // `ingest.mjs` globs `<group>/*.mp4`, so a leftover scratch file one level down would be ingested
@@ -376,31 +386,61 @@ async function fill(group, queries, want) {
   const scratch = path.join(SOURCES, '.candidate.mp4');
   let downloads = 0;
   let kept = 0;
-  for (const { video, file } of byId.values()) {
-    if (Object.values(remaining).every((n) => n === 0)) break;
-    if (downloads >= MAX_DOWNLOADS_PER_GROUP) break;
-    downloads += 1;
 
-    await download(file.link, scratch);
-    const luminance = luminanceOf(scratch);
-    if (luminance === null || (remaining[luminance] ?? 0) === 0) {
-      continue;
+  for (let w = 0; w < waves.length; w += 1) {
+    const { perQuery, budget } = waves[w];
+
+    // Round-robin across this wave's queries rather than draining the first. The download budget is
+    // what makes it matter: a group whose dark query returns forty usable clips would spend every
+    // download there, never reach the light query, and report an unfillable light slot that was
+    // only ever unfilled because it was never asked.
+    const byId = new Map();
+    for (let i = 0; i < Math.max(...perQuery.map((q) => q.length), 0); i += 1) {
+      for (const usable of perQuery) {
+        const candidate = usable[i];
+        if (candidate !== undefined && !byId.has(candidate.video.id)) {
+          byId.set(candidate.video.id, candidate);
+        }
+      }
     }
-    remaining[luminance] -= 1;
 
-    const name = nameFor(group, luminance, video);
-    const target = path.join(dir, `${name}.mp4`);
-    renameSync(scratch, target);
-    writeFileSync(
-      path.join(dir, `${name}.json`),
-      JSON.stringify(sidecarFor(video, group), null, 2) + '\n',
-    );
-    kept += 1;
-    console.log(
-      `  ${group.padEnd(14)} ${name.padEnd(16)} ${luminance.padEnd(5)} ` +
-        `${String(file.width)}x${String(file.height)} ` +
-        `${String(Math.round(statSync(target).size / 1024 / 1024))} MB`,
-    );
+    let spent = 0;
+    for (const { video, file } of byId.values()) {
+      if (Object.values(remaining).every((n) => n === 0)) break;
+      if (spent >= budget) break;
+      spent += 1;
+      downloads += 1;
+      seen.add(video.id);
+
+      await download(file.link, scratch);
+      const luminance = luminanceOf(scratch);
+      if (luminance === null || (remaining[luminance] ?? 0) === 0) {
+        continue;
+      }
+      remaining[luminance] -= 1;
+
+      const name = nameFor(group, luminance, video);
+      const target = path.join(dir, `${name}.mp4`);
+      renameSync(scratch, target);
+      writeFileSync(
+        path.join(dir, `${name}.json`),
+        JSON.stringify(sidecarFor(video, group), null, 2) + '\n',
+      );
+      kept += 1;
+      console.log(
+        `  ${group.padEnd(14)} ${name.padEnd(16)} ${luminance.padEnd(5)} ` +
+          `${String(file.width)}x${String(file.height)} ` +
+          `${String(Math.round(statSync(target).size / 1024 / 1024))} MB`,
+      );
+    }
+
+    // Only a LIGHT shortfall earns another wave, and only once. A dark shortfall is not a
+    // vocabulary problem — almost all footage measures dark against this boundary — so a second
+    // query would not find anything the first one missed.
+    if (w === waves.length - 1 && (remaining.light ?? 0) > 0) {
+      console.log(`  ${group.padEnd(14)} light slots still open — trying the bright fallback`);
+      waves.push(await wave([BRIGHT_FALLBACK], FALLBACK_DOWNLOADS));
+    }
   }
 
   rmSync(scratch, { force: true });
