@@ -64,10 +64,25 @@ const PER_LUMINANCE = 2;
  * How many candidates a group may download before giving up on filling a slot.
  *
  * A cap rather than "keep going": a group whose queries genuinely cannot produce a dark clip should
- * report that in seconds, not discover it after eighty downloads. When this trips the run fails and
- * names the group, which is a prompt to edit its query — a human decision, not something to retry.
+ * say so, not discover it after eighty downloads. When this trips the run fails and names the
+ * group, which is a prompt to edit its query — a human decision, not something to retry.
+ *
+ * Sixteen rather than a tighter number because of where the time actually goes. A download is
+ * seconds; the AV1 encode that follows is, measured on four cores at `cpu-used 8`, 23 s for the
+ * landscape rendition alone. Spending a few more downloads to fill a group is far cheaper than a
+ * failed run that has to be started again from nothing.
  */
-const MAX_DOWNLOADS_PER_GROUP = 12;
+const MAX_DOWNLOADS_PER_GROUP = 16;
+
+/**
+ * How many results to ask Pexels for per query.
+ *
+ * Large, because asking is free and choosing is not. A search costs one API call out of 200 an
+ * hour whether it returns fifteen results or forty; what the extra results buy is the chance that
+ * somewhere in them is a clip of the OTHER luminance, which is the thing a group actually fails on.
+ * The download cap above, not this number, is what bounds the cost.
+ */
+const CANDIDATES_PER_QUERY = 40;
 
 /** A clip shorter than this loops visibly; longer than this is bytes we throw away at `-t 8`. */
 const MIN_SECONDS = 6;
@@ -326,7 +341,7 @@ async function fill(group, queries, want) {
   const perQuery = [];
   for (const query of queries) {
     const usable = [];
-    for (const video of await search(query, 15)) {
+    for (const video of await search(query, CANDIDATES_PER_QUERY)) {
       const duration = Number(video.duration ?? 0);
       if (duration < MIN_SECONDS || duration > MAX_SECONDS) continue;
       const file = bestFile(video);
@@ -401,8 +416,10 @@ async function fill(group, queries, want) {
 async function main() {
   if (!existsSync(FFMPEG)) {
     console.error(
-      `no ffmpeg at ${path.relative(ROOT, FFMPEG)} — run \`pnpm install\` first ` +
-        '(it comes from scripts/preview/node_modules/ffmpeg-static).',
+      `no ffmpeg at ${path.relative(ROOT, FFMPEG)}.\n\n` +
+        'It does not come from `pnpm install`: scripts/preview is outside the pnpm workspace and\n' +
+        'installs with npm. Run:\n\n' +
+        '  npm ci --prefix scripts/preview --omit=dev\n',
     );
     process.exit(1);
   }

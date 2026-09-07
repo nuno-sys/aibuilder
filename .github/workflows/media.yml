@@ -52,9 +52,15 @@ jobs:
   refresh:
     name: Fetch, transcode, publish
     runs-on: ubuntu-latest
-    # An AV1 encode of 57 clips at cpu-used 8 is the long pole, not the downloads. Measured in the
-    # tens of minutes; the ceiling is set well above it so a slow runner fails on its merits.
-    timeout-minutes: 150
+    # Measured on four cores — the same count a GitHub-hosted runner has — with ffmpeg 7.0.2 at
+    # `cpu-used 8`: 23 s for the landscape AV1 rendition, 10 s for the portrait, 3 s for H.264, and
+    # about 6 s for both poster ladders. That is ~45 s per clip on flat synthetic footage, and real
+    # footage encodes slower, so 57 clips is roughly one to two hours. The R2 upload adds ~20
+    # minutes: 1,254 keys, each one a `wrangler` process to check and another to write.
+    #
+    # The ceiling is set well above all of that so a slow runner fails on its merits rather than on
+    # the clock, and comfortably under the 6-hour job limit.
+    timeout-minutes: 330
     env:
       PEXELS_KEY: ${{ secrets.PEXELS_KEY }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -67,6 +73,15 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # ffmpeg is NOT a workspace dependency and `pnpm install` above does not produce it.
+      # `scripts/preview` is deliberately outside the pnpm workspace and installs with npm — see its
+      # package.json — so its `ffmpeg-static` has to be asked for separately. `--omit=dev` takes the
+      # 80 MB ffmpeg binary and leaves Playwright and the four font families behind, which this job
+      # has no use for. Five seconds, and it is the exact binary the pipeline is developed against:
+      # ffmpeg 7.0.2 static, with libaom-av1, libx264 and libwebp all present.
+      - name: Install ffmpeg
+        run: npm ci --prefix scripts/preview --omit=dev
 
       - name: Check the key is present
         run: |
@@ -105,6 +120,13 @@ jobs:
       # R2 under keys nothing will ever reference.
       - name: Verify against the new catalogue
         run: pnpm run verify
+
+      # The same idempotent provisioning the deploy runs, for the same reason it runs it: this
+      # checkout's configs still carry `REPLACE_WITH_REAL_ID`, and `media:upload` drives wrangler
+      # through `apps/renderer/wrangler.jsonc`. It also guarantees the media bucket exists before
+      # anything tries to write to it.
+      - name: Provision Cloudflare resources
+        run: node scripts/cloudflare/bootstrap.mjs
 
       # Skips keys R2 already holds, which is why `fetch-footage.mjs` names clips after their Pexels
       # id: new footage gets new keys, so nothing served `immutable` is ever overwritten in place.

@@ -42,8 +42,11 @@ PEXELS_KEY=... pnpm media:fetch --groups=beauty --force
 The searches live in `QUERIES` in `fetch-footage.mjs` and are the one editorial decision in the
 whole pipeline — everything downstream is measurement. Two queries per group, deliberately pulling
 in opposite directions on light, because the coverage gate wants both moods and a single query
-returns one. A group that cannot fill a slot after twelve downloads says so and fails the run: that
+returns one. A group that cannot fill a slot after sixteen downloads says so and fails the run: that
 is a prompt to retune its query, not something to retry.
+
+The whole run takes one to three hours, nearly all of it AV1 encoding: 23 seconds for one clip's
+landscape rendition on four cores, times 57 clips, times four renditions each.
 
 Clips are named `<luminance>-<pexels id>`, and the luminance in that name is **measured**, never
 inferred from the query that found the clip. The id is there because library keys are served
