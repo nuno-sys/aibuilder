@@ -82,16 +82,19 @@
   // directly and writes none of it.
   "services": [{ "binding": "API", "service": "aibuilder-api" }],
 
-  "secrets_store_secrets": [
-    {
-      // Signs the preview session cookie. Comma-separated `kid:material`, first entry signs, any
-      // entry verifies — the same rotation shape as the API's DRAFT_HMAC_KEY.
-      "binding": "PREVIEW_HMAC_KEY",
-      "store_id": "REPLACE_WITH_REAL_ID",
-      "secret_name": "preview_hmac_key",
-    },
-    { "binding": "IP_SALT", "store_id": "REPLACE_WITH_REAL_ID", "secret_name": "ip_salt" },
-  ],
+  // SECRETS LIVE ON THE WORKER, not in a Secrets Store.
+  //
+  // They are set once in the dashboard (Settings -> Variables and Secrets -> Encrypt) or with
+  // `wrangler secret put`, and a deploy never touches them. This is the shape the code was already
+  // written for: every Worker reads through `readSecret()`, which takes a Secrets Store binding OR
+  // a plain string, so moving between the two is a config decision and not a code change.
+  //
+  // The Secrets Store was the other option and it cost more than it returned here: a resource to
+  // create, an open-beta CLI command, and a `Secrets Store: Edit` scope on the deploy token that a
+  // token scoped to Workers, D1, KV, R2 and Queues does not have. It answered `code: 10000` on the
+  // first deploy that got that far. Rotation without a deploy is what it would have bought; a
+  // dashboard secret that survives every deploy is close enough for this estate.
+  // This Worker needs: PREVIEW_HMAC_KEY, IP_SALT.
 
   "vars": {
     "ENVIRONMENT": "production",

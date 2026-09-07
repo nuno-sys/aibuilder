@@ -14,7 +14,8 @@
  *
  * THREE THINGS IT DELIBERATELY DOES NOT DO:
  *   · secrets — they are values, not resources, and a workflow that reads them would need them in
- *     its own environment. They go in the dashboard or through `wrangler secret put`.
+ *     its own environment. They go on the Worker, in the dashboard or through `wrangler secret put`,
+ *     and a deploy never touches them.
  *   · zones and DNS — adding a domain needs a nameserver change at your registrar.
  *   · migrations — `pnpm migrate:*:remote` is the moment "forward-only" starts, and that is a
  *     decision someone makes after reading the SQL, not a side effect of provisioning.
@@ -35,9 +36,6 @@ const DRY_RUN = process.argv.includes('--dry-run');
 
 /** Residency, and a one-way door: D1 and R2 both fix it at creation with no move API. */
 const JURISDICTION = 'eu';
-
-/** The Secrets Store this account's Worker secrets live in. One store, many secrets. */
-const SECRETS_STORE = 'aibuilder';
 
 /**
  * One wrangler invocation, and it cannot outlive its usefulness.
@@ -226,23 +224,6 @@ function ensureQueue(name) {
   return { created: true };
 }
 
-function ensureSecretsStore() {
-  const existing = parseJson(tryWrangler(['secrets-store', 'store', 'list', '--remote'])) ?? [];
-  const found = Array.isArray(existing)
-    ? existing.find((store) => store.name === SECRETS_STORE)
-    : undefined;
-  if (found) return { id: found.id, created: false };
-  if (DRY_RUN) return { id: null, created: true };
-
-  create(['secrets-store', 'store', 'create', SECRETS_STORE, '--remote'], `the Secrets Store`);
-  const after = parseJson(tryWrangler(['secrets-store', 'store', 'list', '--remote'])) ?? [];
-  const made = Array.isArray(after)
-    ? after.find((store) => store.name === SECRETS_STORE)
-    : undefined;
-  if (!made) throw new Error('created the Secrets Store but it is not in the account listing');
-  return { id: made.id, created: true };
-}
-
 /* ── Routes, and the zones that may not exist yet ─────────────────────────── */
 
 /**
@@ -337,7 +318,6 @@ function resolvePlaceholders(file, ids) {
     let owned = true;
     if (/"database_id":/u.test(line) && databaseName !== null) value = ids.d1[databaseName];
     else if (/"id":/u.test(line) && binding !== null) value = ids.kv[binding];
-    else if (/"store_id":/u.test(line)) value = ids.secretsStore;
     else if (/"R2_S3_ENDPOINT":/u.test(line)) value = ids.accountId;
     else {
       const named = /"([A-Z_]+)":\s*"REPLACE_WITH_REAL_ID"/u.exec(line)?.[1];
@@ -389,7 +369,7 @@ const values = {
   INDEXNOW_KEY: process.env['INDEXNOW_KEY'] ?? null,
 };
 
-const ids = { d1: {}, kv: {}, secretsStore: null, accountId, values };
+const ids = { d1: {}, kv: {}, accountId, values };
 const report = [];
 
 for (const name of want.d1) {
@@ -421,11 +401,6 @@ for (const name of want.r2) {
 for (const name of want.queues) {
   const { created } = ensureQueue(name);
   report.push(['Queue', name, created ? (DRY_RUN ? 'would create' : 'created') : 'existed', '']);
-}
-{
-  const { id, created } = ensureSecretsStore();
-  ids.secretsStore = id;
-  report.push(['Store', SECRETS_STORE, created ? 'created' : 'existed', id ?? '(dry run)']);
 }
 
 for (const [kind, name, state, id] of report) {
