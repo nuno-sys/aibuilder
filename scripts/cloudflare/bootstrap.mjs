@@ -272,6 +272,50 @@ function zonesOf(source) {
   return [...source.matchAll(/"zone_name":\s*"([^"]+)"/gu)].map((match) => match[1]);
 }
 
+/**
+ * A route that captures an ENTIRE zone rather than one hostname.
+ *
+ * `apps/renderer` carries the wildcard pattern because every generated site is a subdomain of the
+ * tenant zone and one Worker answers for all of them. On a zone this project owns that is correct.
+ * On a zone that already hosts something else it is a takeover: every hostname on it, including the
+ * apex, starts being served by the renderer.
+ */
+function hasWildcardRoute(source) {
+  return /"pattern":\s*"\*\/\*"/u.test(source);
+}
+
+/**
+ * Whether this config's routes may be attached, and why not when they may not.
+ *
+ * TWO SEPARATE GATES, because they protect against different mistakes. The first is a typo or an
+ * unregistered domain: a zone that is not in the account fails `wrangler deploy` outright, so the
+ * Worker falls back to workers.dev and the estate still comes up. The second is the dangerous one.
+ * A whole-zone route is never attached on the strength of the zone merely EXISTING — it also has to
+ * be named in `TENANT_ZONE_CONFIRMED`. This account hosts live sites on other domains, and nothing
+ * automatic should ever be one config edit away from serving one of them.
+ *
+ * @returns `null` to keep the routes, or a sentence explaining why they were dropped.
+ */
+function routeVerdict(source, zones) {
+  const needed = [...new Set(zonesOf(source))];
+  if (needed.length === 0) return null;
+
+  const missing = needed.filter((zone) => !zones.has(zone));
+  if (missing.length > 0) return `zone not in this account: ${missing.join(', ')}`;
+
+  if (hasWildcardRoute(source)) {
+    const confirmed = process.env['TENANT_ZONE_CONFIRMED'] ?? '';
+    if (!needed.includes(confirmed)) {
+      return (
+        `whole-zone wildcard route over ${needed.join(', ')} — set TENANT_ZONE_CONFIRMED to that ` +
+        'zone to allow it. Until then this Worker stays on workers.dev, because a wildcard route ' +
+        'serves every hostname on the zone, including sites this project did not create.'
+      );
+    }
+  }
+  return null;
+}
+
 /* ── Writing the ids back ─────────────────────────────────────────────────── */
 
 /**
@@ -424,17 +468,14 @@ for (const app of readdirSync(APPS)) {
 
   // Routes first: a zone that is not in the account fails the deploy outright, so the Worker falls
   // back to workers.dev rather than taking the whole estate down with it.
-  if (zones !== null && !DRY_RUN) {
-    const source = readFileSync(file, 'utf8');
-    const missing = zonesOf(source).filter((zone) => !zones.has(zone));
-    if (missing.length > 0) {
-      writeFileSync(file, withoutRoutes(source));
-      unrouted.push(`${app} (needs ${[...new Set(missing)].join(', ')})`);
-    }
-  } else if (zones !== null) {
+  if (zones !== null) {
     try {
-      const missing = zonesOf(readFileSync(file, 'utf8')).filter((zone) => !zones.has(zone));
-      if (missing.length > 0) unrouted.push(`${app} (needs ${[...new Set(missing)].join(', ')})`);
+      const source = readFileSync(file, 'utf8');
+      const verdict = routeVerdict(source, zones);
+      if (verdict !== null) {
+        if (!DRY_RUN) writeFileSync(file, withoutRoutes(source));
+        unrouted.push(`${app}: ${verdict}`);
+      }
     } catch {
       // No config for this directory.
     }
