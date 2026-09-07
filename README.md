@@ -439,12 +439,18 @@ deploy job `environment: tenant-zone` and add a required reviewer to it in the r
 
 Repository → Settings → Secrets and variables → Actions.
 
-**Secrets** — two, and nothing else:
+**Secrets** — two for a deploy, plus one for the media library:
 
 | Secret                  | Where it comes from                                                                                                                                                |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `CLOUDFLARE_API_TOKEN`  | Cloudflare → My Profile → API Tokens. Scopes: Workers Scripts:Edit, D1:Edit, Workers KV Storage:Edit, Workers R2 Storage:Edit, Queues:Edit, Account Settings:Read. |
 | `CLOUDFLARE_ACCOUNT_ID` | `wrangler whoami`, or the URL of any dashboard page.                                                                                                               |
+| `PEXELS_KEY`            | <https://www.pexels.com/api/> — free, instant, no card. Only the **Media library** workflow reads it; a deploy never does.                                         |
+
+`PEXELS_KEY` is what turns the placeholder gradients in the media library into real footage. Add it,
+then run **Actions → Media library → Run workflow**: it fetches, transcodes, measures and uploads
+the clips, commits the index, and dispatches a deploy on its own. See
+[`scripts/media-library/README.md`](scripts/media-library/README.md).
 
 **Variables** — three, none of them secret. The Turnstile site key is rendered into the widget, the
 Stripe price is quoted on the pricing page, and the IndexNow key is served at `/<key>.txt` by

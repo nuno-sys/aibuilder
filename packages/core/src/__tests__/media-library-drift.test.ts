@@ -29,6 +29,11 @@ const UPLOAD = readFileSync(
   'utf8',
 );
 
+const FETCH = readFileSync(
+  fileURLToPath(new URL('../../../../scripts/media-library/fetch-footage.mjs', import.meta.url)),
+  'utf8',
+);
+
 describe('the ingest script agrees with the code that consumes it', () => {
   it('organises footage by exactly the groups the taxonomy defines', () => {
     const block = /const GROUPS = \[([\s\S]*?)\];/u.exec(INGEST);
@@ -41,6 +46,34 @@ describe('the ingest script agrees with the code that consumes it', () => {
     const match = /const LUMINANCE_BOUNDARY = ([0-9.]+);/u.exec(INGEST);
     expect(match, 'LUMINANCE_BOUNDARY not found in ingest.mjs').not.toBeNull();
     expect(Number(match?.[1])).toBe(LUMINANCE_BOUNDARY);
+  });
+
+  it('searches for footage for every group, and only for groups that exist', () => {
+    // A group missing from `QUERIES` is not an error anywhere: the fetch simply skips it, the
+    // ingest finds no clips for it, and the coverage gate fails one step later naming a group whose
+    // footage was never asked for. This is the assertion that names the actual cause.
+    const block = /const QUERIES = \{([\s\S]*?)^\};/mu.exec(FETCH);
+    expect(block, 'QUERIES not found in fetch-footage.mjs').not.toBeNull();
+    const declared = [...(block?.[1] ?? '').matchAll(/^ {2}([a-z_]+):/gmu)].map((m) => m[1]);
+    expect(declared.sort()).toEqual(INDUSTRY_GROUPS.map((g) => g.key).sort());
+  });
+
+  it('classifies a candidate against the same boundary the ingest will re-measure it with', () => {
+    // The fetch names a file `dark-*` or `light-*`; the ingest measures the pixels again and the
+    // manifest carries ITS answer. Two boundaries that disagree produce a library whose filenames
+    // contradict its own catalogue — and the coverage gate counts the catalogue, so a group can
+    // look full on disk and fail the gate.
+    const match = /const LUMINANCE_BOUNDARY = ([0-9.]+);/u.exec(FETCH);
+    expect(match, 'LUMINANCE_BOUNDARY not found in fetch-footage.mjs').not.toBeNull();
+    expect(Number(match?.[1])).toBe(LUMINANCE_BOUNDARY);
+  });
+
+  it('fetches at least as many clips per luminance as the coverage gate demands', () => {
+    const wanted = /const PER_LUMINANCE = ([0-9]+);/u.exec(FETCH);
+    const gate = /if \(have < ([0-9]+)\)/u.exec(INGEST);
+    expect(wanted, 'PER_LUMINANCE not found in fetch-footage.mjs').not.toBeNull();
+    expect(gate, 'the coverage gate was not found in ingest.mjs').not.toBeNull();
+    expect(Number(wanted?.[1])).toBeGreaterThanOrEqual(Number(gate?.[1]));
   });
 
   it('uploads to the prefix the renderer reads from', () => {

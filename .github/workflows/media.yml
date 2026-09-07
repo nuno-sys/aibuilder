@@ -1,0 +1,156 @@
+name: Media library
+
+# Fills the media library with real, licensed footage — and this is the ONE job that has to run
+# here rather than on a developer's machine or in an agent's sandbox.
+#
+# WHY A WORKFLOW AND NOT A LOCAL SCRIPT
+# Three things have to happen in the same place: reach Pexels over the open internet, run ffmpeg
+# with libaom-av1 for an hour, and hold ~2 GB of intermediates. A GitHub-hosted runner has all
+# three. A Cloudflare Worker has none of them (no codecs, 128 MB, no build compute — see
+# .design/00-ARCHITECTURE.md), and a sandboxed environment behind an egress proxy cannot reach a
+# stock-media host at all. So the footage is sourced where the network is open, transcoded where
+# there is CPU, and only the INDEX travels back into git.
+#
+# WHAT COMES BACK
+#   packages/core/src/media-library/catalogue.generated.ts   the index the Workers bundle
+#   apps/marketing/public/media/hero/**                      the sales page's own header
+#   apps/marketing/src/content/hero-media.generated.ts       its sizes and byte budgets
+# The binaries do NOT: they go straight to R2 under `library/<key>` and are never committed.
+#
+# Committing those three is what makes this automatic end to end — the push triggers Deploy, which
+# rebuilds every Worker against the new catalogue. Nothing to click twice.
+
+on:
+  workflow_dispatch:
+    inputs:
+      groups:
+        description: "Comma-separated industry groups to refresh (blank = all, plus brand)"
+        required: false
+        default: ""
+      force:
+        description: "Refetch groups that are already filled"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+  # `actions: write` is for dispatching Deploy at the end — see that step's comment.
+  actions: write
+
+# Two of these at once would race on the same branch and the same R2 keys.
+concurrency:
+  group: media-library
+  cancel-in-progress: false
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  WRANGLER_SEND_METRICS: "false"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  refresh:
+    name: Fetch, transcode, publish
+    runs-on: ubuntu-latest
+    # An AV1 encode of 57 clips at cpu-used 8 is the long pole, not the downloads. Measured in the
+    # tens of minutes; the ceiling is set well above it so a slow runner fails on its merits.
+    timeout-minutes: 150
+    env:
+      PEXELS_KEY: ${{ secrets.PEXELS_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check the key is present
+        run: |
+          if [ -z "${PEXELS_KEY}" ]; then
+            echo "::error::PEXELS_KEY is not set. Add it under Settings → Secrets and variables →" \
+                 "Actions → New repository secret. A key is free and instant at https://www.pexels.com/api/."
+            exit 1
+          fi
+
+      # The inputs go through the environment, never interpolated into the script body: `${{ }}` in
+      # a `run:` block is textual substitution, so a dispatch input containing a shell metacharacter
+      # would be executed rather than passed along.
+      - name: Fetch footage
+        env:
+          GROUPS: ${{ inputs.groups }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          args=()
+          if [ -n "${GROUPS}" ]; then args+=("--groups=${GROUPS}"); fi
+          if [ "${FORCE}" = "true" ]; then args+=("--force"); fi
+          node scripts/media-library/fetch-footage.mjs "${args[@]}"
+
+      # Transcodes every clip to every rendition it will ever be served in and MEASURES luminance
+      # and hue off the pixels. Exits non-zero when a group cannot dress both a light and a dark
+      # site, which is the gate that stops half-filled footage reaching a customer.
+      - name: Transcode and measure
+        run: pnpm run media:ingest
+
+      - name: Emit the catalogue
+        run: pnpm run media:catalogue
+
+      - name: Stage the marketing hero
+        run: pnpm run media:marketing
+
+      # Before the upload, not after: a catalogue that fails typecheck must not leave bytes behind in
+      # R2 under keys nothing will ever reference.
+      - name: Verify against the new catalogue
+        run: pnpm run verify
+
+      # Skips keys R2 already holds, which is why `fetch-footage.mjs` names clips after their Pexels
+      # id: new footage gets new keys, so nothing served `immutable` is ever overwritten in place.
+      - name: Upload the binaries to R2
+        run: pnpm run media:upload
+
+      - name: Commit the index
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/core/src/media-library/catalogue.generated.ts \
+                  apps/marketing/public/media/hero \
+                  apps/marketing/src/content/hero-media.generated.ts
+          if git diff --cached --quiet; then
+            echo "no change to the catalogue — nothing to commit"
+            exit 0
+          fi
+          git commit -m "chore(media): refresh the library from Pexels
+
+          Fetched, transcoded and measured by .github/workflows/media.yml.
+          Binaries are in R2 under library/<key>; only the index is committed."
+          git push origin HEAD:"${GITHUB_REF_NAME}"
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+
+      # A push made with GITHUB_TOKEN deliberately does NOT start another workflow run — GitHub
+      # blocks that to stop workflows triggering each other in a loop. So the commit above would sit
+      # there, deployed by nobody, and the new catalogue would go live only on the next unrelated
+      # push. Dispatching Deploy explicitly is the supported way out: `workflow_dispatch` through
+      # the API is exempt from that rule.
+      - name: Deploy the new catalogue
+        if: steps.commit.outputs.deploy == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref "${GITHUB_REF_NAME}"
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '### Media library'
+            echo
+            echo '| stage | |'
+            echo '| --- | --- |'
+            echo "| groups | ${{ inputs.groups == '' && 'all + brand' || inputs.groups }} |"
+            echo "| force | ${{ inputs.force }} |"
+            echo
+            echo 'Binaries → R2 `library/<key>`. Index → committed, which triggers Deploy.'
+          } >> "$GITHUB_STEP_SUMMARY"

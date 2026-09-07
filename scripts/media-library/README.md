@@ -18,6 +18,40 @@ to guarantee a human has actually looked at every clip that ships.
 
 ## Filling it
 
+Two ways in. The automatic one is the one to use.
+
+### Automatically, from Pexels
+
+Add a repository secret `PEXELS_KEY` (free and instant at <https://www.pexels.com/api/>), then run
+the **Media library** workflow from the Actions tab. It fetches real footage, transcodes it,
+measures it, uploads the binaries to R2, commits the index, and dispatches Deploy. Nothing to click
+twice.
+
+It has to run there rather than locally or in an agent sandbox because three things must happen in
+one place: reach Pexels over the open internet, run `libaom-av1` for the better part of an hour, and
+hold a couple of gigabytes of intermediates. A GitHub-hosted runner has all three.
+
+The same fetch runs locally if you have the key:
+
+```bash
+PEXELS_KEY=... pnpm media:fetch                       # fill every empty slot
+PEXELS_KEY=... pnpm media:fetch --groups=beauty       # just one group
+PEXELS_KEY=... pnpm media:fetch --groups=beauty --force
+```
+
+The searches live in `QUERIES` in `fetch-footage.mjs` and are the one editorial decision in the
+whole pipeline — everything downstream is measurement. Two queries per group, deliberately pulling
+in opposite directions on light, because the coverage gate wants both moods and a single query
+returns one. A group that cannot fill a slot after twelve downloads says so and fails the run: that
+is a prompt to retune its query, not something to retry.
+
+Clips are named `<luminance>-<pexels id>`, and the luminance in that name is **measured**, never
+inferred from the query that found the clip. The id is there because library keys are served
+`immutable` for a year: new footage gets new keys, so a refresh never overwrites bytes something is
+still caching.
+
+### By hand
+
 ```
 scripts/media-library/sources/<group>/<name>.mp4     the clip
 scripts/media-library/sources/<group>/<name>.json    { "description": "...", "credit": "..." }
@@ -70,21 +104,26 @@ luminance is carried per clip and treated as a hard constraint at selection.
 
 ## Renditions
 
-Per clip: AV1 + H.264, landscape 1920×1080 and portrait 720×1280. The portrait encode is the whole
+Per clip: AV1 + H.264, landscape 1920×1080 and portrait 720×1560. The portrait encode is the whole
 reason background video can be affordable on a phone: roughly a quarter of the bytes, and it fills
 the viewport instead of being letterboxed into it.
 
 Per still, two ladders. Landscape: AVIF + WebP at 640 / 960 / 1280 / 1920 / 2560. Portrait, cropped
-9:16 to match the portrait clip: 540 / 720 / 1080 / 1440. AVIF first because it is ~30% smaller at
+9:19.5 to match the portrait clip: 540 / 720 / 1080 / 1440. AVIF first because it is ~30% smaller at
 the same quality; WebP always built because AVIF is not universal. No JPEG rung — the `<img>` src
 points at the largest WebP, which every browser reaching this markup can decode.
 
 The portrait ladder is not art direction for its own sake. LCP scores an image at
-`min(visible area, intrinsic area)`, so cover-fitting a 16:9 still into a 9:16 viewport picks a rung
-_smaller_ than the hero is displayed at — the poster is scored down, the portrait video is scored at
-the full box, and the video takes the LCP entry away from it. Every rung here is larger than any
-phone hero is displayed at, so the poster is never capped and the video can at best tie. A tie keeps
-the poster: the algorithm only replaces a candidate with a strictly larger one.
+`min(visible area, intrinsic area)`, so cover-fitting a 16:9 still into a phone viewport picks a
+rung _smaller_ than the hero is displayed at — the poster is scored down, the portrait video is
+scored at the full box, and the video takes the LCP entry away from it.
+
+9:19.5 rather than 9:16 is what turns that from a hope into a proof. A rung of width `w` is selected
+when `viewport width × DPR` is about `w`, so at DPR 1 the box is `w` CSS px wide and as tall as the
+device — up to 19.5/9 of its width on the tallest phones shipping. Cut at 9:16 the rung is _smaller_
+than that box and the video, clamped to the same box, still scores strictly higher. Cut at 9:19.5 it
+_is_ the box, so the video can at best tie, and a tie keeps the poster: the algorithm only replaces
+a candidate with a strictly larger one.
 
 ## Serving
 

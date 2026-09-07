@@ -151,8 +151,14 @@ credible while the page making it serves the bytes the product produces.
 
 ### Open, and the client's to decide
 
-- **Licence.** Pexels requires a visible credit on every customer site; a one-off paid library
-  licence for ~56 clips does not. The schema carries `credit` per clip and the footer renders it,
-  so either answer works — but the choice changes what a customer's footer says.
+- **Licence.** Correcting an earlier version of this line, which said Pexels "requires a visible
+  credit on every customer site": it does not. The Pexels **licence** permits download, hosting,
+  modification and commercial use and asks for no attribution. What does bind us is the Pexels
+  **API Guidelines** — a prominent link back to Pexels wherever the API is used, and credit to the
+  creator where possible. Those are two different obligations, and the difference matters here:
+  the library is fetched by `.github/workflows/media.yml` once at curation time, so the API is used
+  by *us*, not by a customer's site. The compact `credit` line the footer renders is therefore a
+  courtesy we have chosen to keep, not a term a tenant is forced to carry. A paid library licence
+  would change nothing about what is legal — only about who is thanked.
 - **Curation.** 14 groups × 4 clips, minimum two light and two dark per group. The pipeline runs
   end to end on abstract stand-ins today; every one is labelled `placeholder: true` in its sidecar.
