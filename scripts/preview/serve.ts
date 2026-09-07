@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DemoSite } from './demo-sites';
 import { DEMO_SITES } from './demo-sites';
-import { OUTPUT_DIR, buildAssetTable, buildFontTable } from './media';
+import { LIBRARY_BASE, LIBRARY_DIR, OUTPUT_DIR, buildAssetTable, buildFontTable } from './media';
 
 /**
  * A static server over `.preview/`, one port per demo site.
@@ -220,6 +220,27 @@ export async function startServers(
       if (pathname === '/site.webmanifest') {
         response.writeHead(200, { 'content-type': CONTENT_TYPES['.webmanifest'] ?? 'text/plain' });
         response.end(webManifest(site));
+        return;
+      }
+
+      // The media library's binaries live outside `.preview/` — they are a product artefact the
+      // ingest produces, not something this harness generates — so they are served from there
+      // directly rather than copied in.
+      if (pathname.startsWith(`${LIBRARY_BASE}/`)) {
+        const key = pathname.slice(LIBRARY_BASE.length + 1);
+        const target = path.join(LIBRARY_DIR, key);
+        // Refuse anything that escapes the library root, even in a dev server.
+        if (!path.resolve(target).startsWith(path.resolve(LIBRARY_DIR)) || !existsSync(target)) {
+          response.writeHead(404);
+          response.end('not in the media library');
+          return;
+        }
+        response.writeHead(200, {
+          'content-type': CONTENT_TYPES[path.extname(target)] ?? 'application/octet-stream',
+          'cache-control': 'no-store',
+          'accept-ranges': 'bytes',
+        });
+        response.end(readFileSync(target));
         return;
       }
 

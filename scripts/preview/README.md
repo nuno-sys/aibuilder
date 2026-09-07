@@ -9,6 +9,13 @@ ramp through it.
 Nothing here is imported by the product. The harness owns `scripts/preview/**` and writes to
 `.preview/`, which is git-ignored.
 
+## Hero footage
+
+The demos play clips from the pre-optimised media library (`scripts/media-library/`), chosen by the
+same selector the builder uses — not by anything this harness decides. Run `pnpm media:ingest`
+first, or the header falls back to a full-screen poster, which is exactly what production does when
+the library cannot dress a combination.
+
 ## Run it
 
 ```bash

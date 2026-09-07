@@ -13,9 +13,9 @@ import {
   OUTPUT_DIR,
   iconUrl,
   imageUrl,
-  videoUrl,
+  libraryUrl,
+  selectDemoHero,
   writeAssets,
-  writeVideos,
 } from './media';
 
 /**
@@ -140,28 +140,36 @@ function imagesOf(site: DemoSite): Record<string, ResolvedImage> {
   return images;
 }
 
-/** The hero's art-directed set: a landscape poster, a portrait crop, and no video. */
+/** The hero's art-directed set: a landscape poster, a portrait crop, and the library clip. */
 function heroOf(site: DemoSite, images: Readonly<Record<string, ResolvedImage>>): HeroMedia | null {
   const poster = images[site.heroRefId];
   if (poster === undefined) return null;
   const portrait = images[site.heroPortraitRefId];
+  const clip = selectDemoHero(site);
   return {
     poster,
     portraitSources: portrait === undefined ? [] : [...portrait.sources],
     /*
-      Real, encoded footage — see `video.ts`. Two sizes, because a phone must never be handed the
-      1920x1080 file: the portrait encode is roughly a quarter of the bytes AND fills a phone
-      viewport instead of being letterboxed into it. The poster is still the LCP element and the
-      video still mounts only after `js/site.ts` has seen LCP attributed to it.
+      The clip the REAL selector chose out of the shipped library, not one the harness assigned.
+      Two encodes, because a phone must never be handed the 1920x1080 file: the portrait rendition
+      is roughly a quarter of the bytes AND fills a phone viewport instead of being letterboxed
+      into it. The poster remains the LCP element, and the video still mounts only after
+      `js/site.ts` has seen LCP attributed.
+
+      `null` when the library is empty or cannot dress this combination — the header is then a
+      full-screen poster, which is exactly what production does.
     */
-    video: {
-      desktopAv1: videoUrl(site.archetype, 'landscape', 'av1'),
-      desktopH264: videoUrl(site.archetype, 'landscape', 'h264'),
-      mobileAv1: videoUrl(site.archetype, 'portrait', 'av1'),
-      mobileH264: videoUrl(site.archetype, 'portrait', 'h264'),
-      width: 1920,
-      height: 1080,
-    },
+    video:
+      clip === null
+        ? null
+        : {
+            desktopAv1: libraryUrl(clip.landscape.av1Key),
+            desktopH264: libraryUrl(clip.landscape.h264Key),
+            mobileAv1: libraryUrl(clip.portrait.av1Key),
+            mobileH264: libraryUrl(clip.portrait.h264Key),
+            width: clip.landscape.width,
+            height: clip.landscape.height,
+          },
   };
 }
 
@@ -358,15 +366,6 @@ function indexHtml(manifest: PreviewManifest): string {
 export async function renderAll(): Promise<PreviewManifest> {
   mkdirSync(OUTPUT_DIR, { recursive: true });
   const assets = writeAssets(DEMO_SITES);
-  // Cached on disk: four archetypes at two sizes in two codecs is minutes of encoding, and none of
-  // it changes unless a palette does.
-  const videos = writeVideos(DEMO_SITES);
-  const videoBytes = videos.reduce((total, entry) => total + entry.bytes, 0);
-  console.log(
-    `video: ${String(videos.length)} files (${String(Math.round(videoBytes / 1024))} kB) — ` +
-      `landscape ${String(Math.round((videos.find((v) => v.file.includes('-landscape.h264'))?.bytes ?? 0) / 1024))} kB ` +
-      `vs portrait ${String(Math.round((videos.find((v) => v.file.includes('-portrait.h264'))?.bytes ?? 0) / 1024))} kB per site`,
-  );
   const missingFonts = assets.fonts.filter((entry) => entry.source === null);
   console.log(
     `media: ${String(assets.files)} files (${String(Math.round(assets.bytes / 1024))} kB of generated SVG/PNG)`,

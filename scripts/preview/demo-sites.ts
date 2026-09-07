@@ -175,9 +175,10 @@ function digestOf(seed: string): string {
 /**
  * The hero's motion layer for one archetype.
  *
- * The R2 keys are the harness's own encoded files (`video.ts`); in production they are whatever the
- * media pipeline re-hosted. `luminance` is the archetype's canonical mode — the footage is encoded
- * from that DNA's own ramp, so the two cannot disagree.
+ * These keys are a placeholder shape only: what the pages actually play is chosen by the REAL
+ * selector against the shipped catalogue, in `media.ts`'s `selectDemoHero()`, and threaded into
+ * the render context by `render.ts`. `luminance` here is the archetype's canonical mode, which is
+ * what the selector constrains on, so the two cannot disagree.
  */
 function heroVideoFor(archetype: DnaId): HeroVideo {
   return {
