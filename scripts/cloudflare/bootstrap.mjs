@@ -183,6 +183,54 @@ function ensureSecretsStore() {
   return { id: made.id, created: true };
 }
 
+/* ── Routes, and the zones that may not exist yet ─────────────────────────── */
+
+/**
+ * Zone names present in the account, or `null` when that cannot be determined.
+ *
+ * `null` is deliberately not the same as "none": without a token, or when the API is unreachable,
+ * the honest answer is that we do not know, and the configs are left exactly as they are. Guessing
+ * "no zones" would silently strip working routes off a live production deploy.
+ */
+async function knownZones() {
+  const token = process.env['CLOUDFLARE_API_TOKEN'];
+  if (token === undefined || token === '') return null;
+  try {
+    const response = await fetch('https://api.cloudflare.com/client/v4/zones?per_page=50', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    if (body?.success !== true || !Array.isArray(body.result)) return null;
+    return new Set(body.result.map((zone) => zone.name));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Removes a config's `routes` and lets the Worker answer on `workers.dev` instead.
+ *
+ * A route names a zone, and `wrangler deploy` fails outright when that zone is not in the account —
+ * so with the placeholder domains still in place, the very first deploy dies on the first Worker
+ * and nothing at all goes live. Falling back to `workers.dev` means the estate deploys and is
+ * reachable today; the moment the real zones are added the routes attach again on the next push,
+ * with no edit here. That is the whole point of doing this at deploy time rather than in git.
+ */
+function withoutRoutes(source) {
+  // Non-greedy to the first `],` — no `routes` entry contains a nested array.
+  return source.replace(
+    /^(\s*)"routes":\s*\[[\s\S]*?\],\n/mu,
+    '$1// `routes` removed at deploy time: the zone it named is not in this account yet.\n' +
+      '$1"workers_dev": true,\n',
+  );
+}
+
+/** Every zone a config's routes depend on. */
+function zonesOf(source) {
+  return [...source.matchAll(/"zone_name":\s*"([^"]+)"/gu)].map((match) => match[1]);
+}
+
 /* ── Writing the ids back ─────────────────────────────────────────────────── */
 
 /**
@@ -319,12 +367,39 @@ for (const [kind, name, state, id] of report) {
   console.log(`${kind.padEnd(6)} ${name.padEnd(42)} ${state.padEnd(8)} ${id}`);
 }
 
+const zones = await knownZones();
+if (zones === null) {
+  console.log('\ncould not read the account zones — routes left exactly as the configs state them');
+} else {
+  console.log(`\nzones in this account: ${zones.size === 0 ? '(none)' : [...zones].join(', ')}`);
+}
+
 let patched = 0;
 const unresolved = [];
 const foreign = [];
+const unrouted = [];
 
 for (const app of readdirSync(APPS)) {
   const file = path.join(APPS, app, 'wrangler.jsonc');
+
+  // Routes first: a zone that is not in the account fails the deploy outright, so the Worker falls
+  // back to workers.dev rather than taking the whole estate down with it.
+  if (zones !== null && !DRY_RUN) {
+    const source = readFileSync(file, 'utf8');
+    const missing = zonesOf(source).filter((zone) => !zones.has(zone));
+    if (missing.length > 0) {
+      writeFileSync(file, withoutRoutes(source));
+      unrouted.push(`${app} (needs ${[...new Set(missing)].join(', ')})`);
+    }
+  } else if (zones !== null) {
+    try {
+      const missing = zonesOf(readFileSync(file, 'utf8')).filter((zone) => !zones.has(zone));
+      if (missing.length > 0) unrouted.push(`${app} (needs ${[...new Set(missing)].join(', ')})`);
+    } catch {
+      // No config for this directory.
+    }
+  }
+
   let result;
   try {
     result = resolvePlaceholders(file, ids);
@@ -361,4 +436,12 @@ if (!DRY_RUN && unresolved.length > 0) {
 if (foreign.length > 0) {
   console.log('\nStill yours to fill — values, not resources this script can create:');
   for (const line of foreign) console.log(`  ${line}`);
+}
+
+if (unrouted.length > 0) {
+  console.log(
+    `\n${DRY_RUN ? 'would serve' : 'serving'} on workers.dev — the zone these route to is not in ` +
+      'this account yet. Add the domain and the routes attach on the next deploy:',
+  );
+  for (const line of unrouted) console.log(`  ${line}`);
 }
