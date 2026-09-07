@@ -311,7 +311,15 @@ export async function runAssembleStep(
     facts: siteFactsFrom(input.intake),
     media,
     heroVideo: input.manifest.heroVideo,
-    footerMediaRefId: input.manifest.footerMediaRefId,
+    // Re-checked against the RESOLVED theme, for the same reason the section grounds are assigned
+    // here. The media step picked this before a theme existed, from the industry's design DNA; if
+    // the model then chose the other mode, a ground whose luminance disagrees is not a duller
+    // footer, it is a footer whose legal identity block cannot be read.
+    footerMediaRefId: keepIfLuminanceMatches(
+      input.manifest,
+      input.manifest.footerMediaRefId,
+      applied.structure.theme.colorMode,
+    ),
     // Assigned here rather than in the media step, which runs before section ids exist. The pick is
     // made against the RESOLVED theme, so a background whose luminance disagrees with the mode the
     // model actually chose is dropped instead of being rendered under unreadable copy.
@@ -347,6 +355,21 @@ export async function runAssembleStep(
     warnings: findings.map(describe),
     issues: issues.map((issue) => `${issue.code}@${issue.path}: ${issue.message}`),
   };
+}
+
+/**
+ * Keeps a ground only while its measured luminance matches the mode the copy will be set in.
+ *
+ * @returns the ref id, or `null` when it disagrees or was never resolved.
+ */
+export function keepIfLuminanceMatches(
+  manifest: MediaManifest,
+  refId: string | null,
+  colorMode: 'light' | 'dark',
+): string | null {
+  if (refId === null) return null;
+  const asset = manifest.assets[refId];
+  return asset !== undefined && asset.luminance === colorMode ? refId : null;
 }
 
 /**
