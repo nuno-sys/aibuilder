@@ -136,6 +136,49 @@ function inventory() {
  */
 const kvTitle = (binding) => `aibuilder-${binding.toLowerCase().replaceAll('_', '-')}`;
 
+/**
+ * Turns a wrangler failure into an instruction, when it is one.
+ *
+ * Some Cloudflare products are off until someone accepts their terms in the dashboard, and the API
+ * cannot turn them on — R2 answers `code: 10042`, Queues and Workflows need the paid plan. Those
+ * are not bugs and not something to retry; they are a link to click, once. Left alone they surface
+ * as a Node stack trace ending in `execFileSync`, which says nothing about what to do.
+ *
+ * @returns a human instruction, or `null` when the failure is not one of these.
+ */
+function explainFailure(error) {
+  const text = `${String(error?.stdout ?? '')}${String(error?.stderr ?? '')}${String(error?.message ?? '')}`;
+  if (/10042|enable R2/iu.test(text)) {
+    return (
+      'R2 is not enabled on this account. Turn it on once at ' +
+      'https://dash.cloudflare.com → R2 → Overview (it asks you to accept the terms), then run ' +
+      'this again. The API cannot enable it.'
+    );
+  }
+  if (
+    /queues|workflows/iu.test(text) &&
+    /not (enabled|entitled|available)|paid|subscription/iu.test(text)
+  ) {
+    return (
+      'This account is not on the Workers Paid plan. Queues, Workflows and SQLite-backed Durable ' +
+      'Objects all require it: https://dash.cloudflare.com → Workers & Pages → Plans.'
+    );
+  }
+  return null;
+}
+
+/** Runs a create, and fails with an instruction rather than a stack trace when it is one. */
+function create(argv, what) {
+  try {
+    return wrangler(argv);
+  } catch (error) {
+    const instruction = explainFailure(error);
+    if (instruction === null) throw error;
+    console.error(`\n✘ cannot create ${what}\n\n  ${instruction}\n`);
+    process.exit(1);
+  }
+}
+
 /* ── Create, or find what is already there ────────────────────────────────── */
 
 function ensureD1(name) {
@@ -144,7 +187,7 @@ function ensureD1(name) {
   if (found) return { id: found.uuid ?? found.database_id, created: false };
   if (DRY_RUN) return { id: null, created: true };
 
-  wrangler(['d1', 'create', name, '--jurisdiction', JURISDICTION]);
+  create(['d1', 'create', name, '--jurisdiction', JURISDICTION], `the D1 database ${name}`);
   const after = parseJson(tryWrangler(['d1', 'list', '--json'])) ?? [];
   const made = after.find((database) => database.name === name);
   if (!made) throw new Error(`created D1 "${name}" but it is not in the account listing`);
@@ -158,7 +201,7 @@ function ensureKv(binding) {
   if (found) return { id: found.id, created: false };
   if (DRY_RUN) return { id: null, created: true };
 
-  wrangler(['kv', 'namespace', 'create', title]);
+  create(['kv', 'namespace', 'create', title], `the KV namespace ${title}`);
   const after = parseJson(tryWrangler(['kv', 'namespace', 'list'])) ?? [];
   const made = after.find((namespace) => namespace.title === title);
   if (!made) throw new Error(`created KV "${title}" but it is not in the account listing`);
@@ -171,7 +214,7 @@ function ensureR2(name) {
   const listing = tryWrangler(['r2', 'bucket', 'list', '--jurisdiction', JURISDICTION]) ?? '';
   if (listing.includes(name)) return { created: false };
   if (DRY_RUN) return { created: true };
-  wrangler(['r2', 'bucket', 'create', name, '--jurisdiction', JURISDICTION]);
+  create(['r2', 'bucket', 'create', name, '--jurisdiction', JURISDICTION], `the R2 bucket ${name}`);
   return { created: true };
 }
 
@@ -179,7 +222,7 @@ function ensureQueue(name) {
   const listing = tryWrangler(['queues', 'list']) ?? '';
   if (listing.includes(name)) return { created: false };
   if (DRY_RUN) return { created: true };
-  wrangler(['queues', 'create', name]);
+  create(['queues', 'create', name], `the queue ${name}`);
   return { created: true };
 }
 
@@ -191,7 +234,7 @@ function ensureSecretsStore() {
   if (found) return { id: found.id, created: false };
   if (DRY_RUN) return { id: null, created: true };
 
-  wrangler(['secrets-store', 'store', 'create', SECRETS_STORE, '--remote']);
+  create(['secrets-store', 'store', 'create', SECRETS_STORE, '--remote'], `the Secrets Store`);
   const after = parseJson(tryWrangler(['secrets-store', 'store', 'list', '--remote'])) ?? [];
   const made = Array.isArray(after)
     ? after.find((store) => store.name === SECRETS_STORE)
@@ -366,13 +409,18 @@ for (const binding of want.kv) {
 }
 for (const name of want.r2) {
   const { created } = ensureR2(name);
-  report.push(['R2', `${name} [${JURISDICTION}]`, created ? 'created' : 'existed', '']);
+  report.push([
+    'R2',
+    `${name} [${JURISDICTION}]`,
+    created ? (DRY_RUN ? 'would create' : 'created') : 'existed',
+    '',
+  ]);
 }
 // The dead-letter queue must exist before the consumer that names it, or the generator's first
 // deploy fails. `inventory()` yields producers before consumers, and the DLQ with its consumer.
 for (const name of want.queues) {
   const { created } = ensureQueue(name);
-  report.push(['Queue', name, created ? 'created' : 'existed', '']);
+  report.push(['Queue', name, created ? (DRY_RUN ? 'would create' : 'created') : 'existed', '']);
 }
 {
   const { id, created } = ensureSecretsStore();
