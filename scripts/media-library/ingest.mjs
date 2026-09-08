@@ -247,9 +247,13 @@ function fresh(file) {
  * Encodes one file at a CRF ladder until it fits its byte budget, and returns what it took.
  *
  * Each step of `CRF_STEP` costs visible quality, so the ladder starts at the CRF that looks right
- * and only walks when the scales say it must. Failing to fit after `MAX_CRF_ATTEMPTS` throws rather
- * than shipping an over-budget clip: the renderer would refuse it later anyway, at a customer's
- * expense instead of ours.
+ * and only walks when the scales say it must.
+ *
+ * Returns `null` when the clip will not fit at all, and the caller DROPS it. Throwing was the first
+ * design and it was wrong: one 60 MB clip that would not come under 2.4 MB at CRF 54 ended a
+ * two-hour run in which fifty-odd other clips had already been encoded correctly. A clip that
+ * cannot meet the budget costs that clip. Whether the library is still viable without it is the
+ * coverage gate's question, and it already knows how to ask it.
  */
 function encodeToBudget(file, budget, startCrf, build) {
   let crf = startCrf;
@@ -261,14 +265,15 @@ function encodeToBudget(file, budget, startCrf, build) {
     }
     crf += CRF_STEP;
   }
-  throw new Error(
-    `${path.relative(OUT, file)} will not fit ${String(budget)} B: still ` +
-      `${String(statSync(file).size)} B at CRF ${String(crf - CRF_STEP)}. The source is probably ` +
-      'too noisy or too long — replace the clip rather than raising the ceiling.',
-  );
+  return null;
 }
 
-/** Encodes one clip into every rendition it will ever be served in. */
+/**
+ * Encodes one clip into every rendition it will ever be served in.
+ *
+ * Returns `null` when any rendition cannot be brought under its byte ceiling, and the clip is then
+ * dropped from the library entirely — a clip whose phone encode does not fit is not half usable.
+ */
 function encodeVideo(input, group, name) {
   const renditions = {};
   for (const target of VIDEO_TARGETS) {
@@ -280,64 +285,32 @@ function encodeVideo(input, group, name) {
     const h264File = path.join(OUT, h264Key);
     // `increase` then centre-crop: the source is never letterboxed into the target shape, which is
     // what makes a portrait encode genuinely fill a phone rather than sit in a black box.
-    const scale = `scale=${target.width}:${target.height}:force_original_aspect_ratio=increase,crop=${target.width}:${target.height},fps=${FPS},format=yuv420p`;
+    const scale =
+      `scale=${target.width}:${target.height}:force_original_aspect_ratio=increase,` +
+      `crop=${target.width}:${target.height},fps=${FPS},format=yuv420p`;
+    const common = ['-i', input, '-t', String(DURATION), '-vf', scale, '-an'];
 
-    // BOTH codecs have to fit, because the manifest records `max(av1, h264)` and the renderer
-    // checks that number. In practice AV1 fits at its first CRF and H.264 is the one that walks.
-    if (!fresh(av1File)) {
-      encodeToBudget(av1File, target.budget, target.av1Crf, (crf) => [
+    // BOTH codecs have to fit, because the manifest records `max(av1, h264)` and that is the number
+    // the renderer checks. In practice AV1 fits early and H.264 is the one that walks.
+    const av1 =
+      fresh(av1File) ||
+      encodeToBudget(av1File, target.budget, target.av1Crf, (crf) =>
         // prettier-ignore
-        '-i',
-        input,
-        '-t',
-        String(DURATION),
-        '-vf',
-        scale,
-        '-an',
-        '-c:v',
-        'libaom-av1',
-        '-crf',
-        String(crf),
-        '-b:v',
-        '0',
-        '-cpu-used',
-        '8',
-        '-row-mt',
-        '1',
-        '-g',
-        String(FPS * 2),
-        av1File,
-      ]);
-    }
-    if (!fresh(h264File)) {
-      encodeToBudget(h264File, target.budget, target.h264Crf, (crf) => [
+        [...common, '-c:v', 'libaom-av1', '-crf', String(crf), '-b:v', '0',
+         '-cpu-used', '8', '-row-mt', '1', '-g', String(FPS * 2), av1File],
+      );
+    if (av1 === null) return null;
+
+    const h264 =
+      fresh(h264File) ||
+      encodeToBudget(h264File, target.budget, target.h264Crf, (crf) =>
         // prettier-ignore
-        '-i',
-        input,
-        '-t',
-        String(DURATION),
-        '-vf',
-        scale,
-        '-an',
-        '-c:v',
-        'libx264',
-        '-profile:v',
-        'high',
-        '-level',
-        '4.0',
-        '-crf',
-        String(crf),
-        '-preset',
-        'medium',
-        '-tune',
-        'film',
-        '-g',
-        String(FPS * 2),
-        '-movflags',
-        '+faststart',
-        h264File,
-      ]);
-    }
+        [...common, '-c:v', 'libx264', '-profile:v', 'high', '-level', '4.0',
+         '-crf', String(crf), '-preset', 'medium', '-tune', 'film',
+         '-g', String(FPS * 2), '-movflags', '+faststart', h264File],
+      );
+    if (h264 === null) return null;
+
     renditions[target.role] = {
       av1Key,
       h264Key,
@@ -575,6 +548,13 @@ function ingestClip(group, file) {
   const frame = posterFrameOf(input, group, name);
   const measured = measure(averageColour(frame));
   const renditions = encodeVideo(input, group, name);
+  if (renditions === null) {
+    console.log(
+      `  ${`${group}/${name}`.padEnd(34)} DROPPED — will not fit the hero video budget at any ` +
+        'quality this encoder will accept',
+    );
+    return null;
+  }
   const poster = encodeStill(frame, 'poster', group, name);
   const posterPortrait = encodeStill(frame, 'poster', group, name, {
     suffix: '-p',
@@ -627,7 +607,8 @@ function clipsIn(group) {
   return readdirSync(dir)
     .filter((f) => /\.(mp4|mov|webm)$/i.test(f))
     .sort()
-    .map((file) => ingestClip(group, file));
+    .map((file) => ingestClip(group, file))
+    .filter((clip) => clip !== null);
 }
 
 function ingest() {

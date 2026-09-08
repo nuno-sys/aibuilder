@@ -93,6 +93,18 @@ const FALLBACK_DOWNLOADS = 10;
  */
 const CANDIDATES_PER_QUERY = 40;
 
+/**
+ * The most a source may weigh per second before it is skipped unopened, in bits.
+ *
+ * A pre-filter, not a guarantee — `ingest.mjs` drops anything that still will not fit. It is here
+ * because the failure it prevents is expensive: a 60 MB clip from `events` refused to come under
+ * 2.4 MB at CRF 54 and, before the ingest learned to drop rather than throw, ended a two-hour run.
+ *
+ * 35 Mbit/s is 25x the landscape budget's own bitrate (1.4 MB across 8 seconds). Everything the
+ * first real library kept sat between 1 and 17 MB; only the outliers are excluded.
+ */
+const MAX_SOURCE_BITRATE = 35_000_000;
+
 /** A clip shorter than this loops visibly; longer than this is bytes we throw away at `-t 8`. */
 const MIN_SECONDS = 6;
 const MAX_SECONDS = 45;
@@ -463,6 +475,17 @@ async function fill(group, queries, want) {
       seen.add(video.id);
 
       await download(file.link, scratch);
+
+      const duration = Number(video.duration ?? 0);
+      const bitrate = (statSync(scratch).size * 8) / Math.max(duration, 1);
+      if (bitrate > MAX_SOURCE_BITRATE) {
+        console.log(
+          `  ${group.padEnd(14)} skipped        ${String(Math.round(bitrate / 1e6))} Mbit/s source ` +
+            `— too heavy to reach the hero budget`,
+        );
+        continue;
+      }
+
       const value = luminanceValueOf(scratch);
       if (value === null) {
         continue;
