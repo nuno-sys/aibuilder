@@ -73,12 +73,13 @@ const PER_LUMINANCE = 2;
  * say so, not discover it after eighty downloads. When this trips the run fails and names the
  * group, which is a prompt to edit its query — a human decision, not something to retry.
  *
- * Sixteen rather than a tighter number because of where the time actually goes. A download is
- * seconds; the AV1 encode that follows is, measured on four cores at `cpu-used 8`, 23 s for the
- * landscape rendition alone. Spending a few more downloads to fill a group is far cheaper than a
- * failed run that has to be started again from nothing.
+ * Twenty-four rather than a tighter number because of where the time actually goes. A download is
+ * seconds and the trial encode three; the real AV1 encode that follows is, measured on four cores
+ * at `cpu-used 8`, 23 s for the landscape rendition alone, times five if the CRF ladder walks the
+ * whole way. Spending a few more downloads to fill a group is far cheaper than a hundred-minute run
+ * that ends in a coverage gap — which is exactly what the run before this one did.
  */
-const MAX_DOWNLOADS_PER_GROUP = 16;
+const MAX_DOWNLOADS_PER_GROUP = 24;
 
 /** The extra downloads the bright fallback wave may spend on a light shortfall. */
 const FALLBACK_DOWNLOADS = 10;
@@ -92,6 +93,25 @@ const FALLBACK_DOWNLOADS = 10;
  * The download cap above, not this number, is what bounds the cost.
  */
 const CANDIDATES_PER_QUERY = 40;
+
+/**
+ * The encoder settings a candidate is TRIED at before it is accepted.
+ *
+ * File size does not predict whether a clip will meet the budget — one of the six the first
+ * budget-aware run had to drop was a 6 MB source. What predicts it is compressibility, and the only
+ * honest way to know that is to encode some of the clip and weigh the result.
+ *
+ * So each candidate gets a one-second trial at the LAST rung of the CRF ladder the ingest would
+ * climb. If a second will not fit an eighth of the budget even there, eight seconds will not fit
+ * the budget, and the ingest would spend five full encodes discovering it. Three seconds here
+ * against a hundred-minute run that ends in a coverage gap.
+ *
+ * AV1 rather than H.264 because AV1 is the codec that actually failed: libaom at `cpu-used 8`
+ * plateaus on grain, which is exactly what a dark night-time clip is made of.
+ */
+const TRIAL_SECONDS = 1;
+const TRIAL_CRF = 54;
+const TRIAL_BUDGET_BYTES = Math.round(1_400_000 / (8 / TRIAL_SECONDS));
 
 /**
  * The most a source may weigh per second before it is skipped unopened, in bits.
@@ -247,6 +267,32 @@ function luminanceValueOf(file) {
     return null;
   } finally {
     rmSync(frame, { force: true });
+  }
+}
+
+/**
+ * Whether one second of this candidate, encoded as hard as the ingest ever will, fits its share of
+ * the landscape budget. See `TRIAL_CRF`.
+ */
+function fitsTheBudget(file) {
+  const trial = path.join(SOURCES, '.candidate.trial.webm');
+  try {
+    execFileSync(
+      FFMPEG,
+      // prettier-ignore
+      ['-hide_banner', '-loglevel', 'error', '-y', '-ss', '1', '-i', file,
+       '-t', String(TRIAL_SECONDS),
+       '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,fps=25,format=yuv420p',
+       '-an', '-c:v', 'libaom-av1', '-crf', String(TRIAL_CRF), '-b:v', '0',
+       '-cpu-used', '8', '-row-mt', '1', trial],
+      { stdio: ['ignore', 'ignore', 'pipe'] },
+    );
+    return statSync(trial).size <= TRIAL_BUDGET_BYTES;
+  } catch {
+    // An undecodable candidate is skipped like any other that does not qualify.
+    return false;
+  } finally {
+    rmSync(trial, { force: true });
   }
 }
 
@@ -482,6 +528,14 @@ async function fill(group, queries, want) {
         console.log(
           `  ${group.padEnd(14)} skipped        ${String(Math.round(bitrate / 1e6))} Mbit/s source ` +
             `— too heavy to reach the hero budget`,
+        );
+        continue;
+      }
+
+      if (!fitsTheBudget(scratch)) {
+        console.log(
+          `  ${group.padEnd(14)} skipped        will not compress to the hero budget ` +
+            `(one-second trial at CRF ${String(TRIAL_CRF)})`,
         );
         continue;
       }
