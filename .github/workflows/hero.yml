@@ -87,7 +87,7 @@ jobs:
 
             Chosen and encoded by .github/workflows/hero.yml."
             # The branch may have moved while this ran. Rebase rather than fail after the work.
-            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
             git push origin HEAD:"${GITHUB_REF_NAME}"
           fi
 

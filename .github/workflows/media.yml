@@ -138,6 +138,16 @@ jobs:
       - name: Emit the catalogue
         run: pnpm run media:catalogue
 
+      # Two hours of fetching and transcoding produce exactly one file that has to reach git. Keep
+      # a copy off the runner BEFORE anything else can fail, so a broken step at minute 120 costs a
+      # download rather than another two hours. It has already cost that once.
+      - name: Keep the catalogue where a failure cannot lose it
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalogue
+          path: packages/core/src/media-library/catalogue.generated.ts
+          retention-days: 7
+
       # Before the upload, not after: a catalogue that fails typecheck must not leave bytes behind in
       # R2 under keys nothing will ever reference.
       - name: Verify against the new catalogue
@@ -171,7 +181,13 @@ jobs:
           Binaries are in R2 under library/<key>; only the index is committed."
           # Two hours have passed since the checkout; the branch has very likely moved. Rebase
           # rather than throw the whole run away on a non-fast-forward at the last step.
-          git pull --rebase origin "${GITHUB_REF_NAME}"
+          #
+          # `--autostash` is load-bearing, not belt-and-braces. The provisioning step above writes
+          # real Cloudflare ids into `apps/*/wrangler.jsonc` — tracked files — and never stages
+          # them, so the working tree is dirty by the time we get here and a plain rebase refuses
+          # outright: "cannot pull with rebase: You have unstaged changes". That cost a run whose
+          # commit had already been made and whose 138 MB was already in R2.
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
           git push origin HEAD:"${GITHUB_REF_NAME}"
           echo "deploy=true" >> "$GITHUB_OUTPUT"
 
