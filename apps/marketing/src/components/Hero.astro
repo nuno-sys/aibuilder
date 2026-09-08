@@ -293,7 +293,6 @@ const {
   interface ConnectionInfo {
     readonly saveData?: boolean;
     readonly effectiveType?: string;
-    readonly downlink?: number;
   }
 
   // `connection` and `deviceMemory` are not in the DOM lib because they are not standardised.
@@ -331,9 +330,21 @@ const {
      * every iPhone — which is the majority of the phones this page is read on, and precisely the
      * device the user asked to see a full-screen video on. Each gate below therefore fires only
      * when the platform positively reports a reason: Data Saver on, a measured 2g/3g connection, a
-     * measured downlink under 1.5 Mbps, or a device reporting 1 GB of RAM. `deviceMemory` reports
-     * in coarse powers of two and caps at 8, so a modern phone reports 4 or 8 and only genuinely
-     * low-end hardware reports less than 2.
+     * or a device reporting 1 GB of RAM. `deviceMemory` reports in coarse powers of two and caps at
+     * 8, so a modern phone reports 4 or 8 and only genuinely low-end hardware reports less than 2.
+     *
+     * THERE IS DELIBERATELY NO `downlink` GATE, and removing it fixed a real bug. `downlink` is a
+     * coarse estimate of RECENT THROUGHPUT, not of link capacity, and a page that has so far
+     * fetched a little HTML and one poster has not given the browser much to estimate from. Driving
+     * this page in Chromium on an idle local connection, it reported 1.4 on one load and 1.55 on
+     * the next — straddling the 1.5 floor this gate used to have, so the header played or did not
+     * play depending on nothing at all. On a fast desktop it mostly did not.
+     *
+     * `effectiveType` is the signal built for this decision and it already encodes the same
+     * judgement: the spec defines `4g` as downlink above 700 kbps with RTT under 270 ms. Requiring
+     * 4g and then second-guessing it with a noisier number from the same API was not caution, it
+     * was a coin flip. The clip is 560 kB on desktop and 126 kB on a phone; at the slowest
+     * connection `4g` admits, that is under a second and a half.
      */
     const allowed = (): boolean => {
       if (reducedMotion.matches) {
@@ -344,9 +355,6 @@ const {
         return false;
       }
       if (connection.effectiveType !== undefined && !/^[45]g$/.test(connection.effectiveType)) {
-        return false;
-      }
-      if (connection.downlink !== undefined && connection.downlink < 1.5) {
         return false;
       }
       const memory = readDeviceMemory();
