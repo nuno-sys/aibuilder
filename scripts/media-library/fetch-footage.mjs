@@ -146,11 +146,11 @@ const QUERIES = {
   beauty: ['barber shop dark interior', 'white salon interior sunlight bright'],
   health: ['physiotherapy treatment room calm', 'white clinic interior bright daylight'],
   sport: ['gym weights training dark', 'white yoga studio sunlight bright'],
-  trades: ['welding workshop sparks', 'white workshop sunlight bright wood'],
+  trades: ['dark workshop wooden workbench moody', 'white workshop sunlight bright wood'],
   automotive: ['car detailing garage night', 'white car showroom bright sunlight'],
   retail: ['boutique shop evening lights', 'white store interior bright sunlight'],
   professional: ['modern office night city window', 'white office sunlight bright minimal'],
-  events: ['wedding reception evening lights', 'white wedding flowers sunlight bright'],
+  events: ['dark elegant banquet table candle', 'white wedding flowers sunlight bright'],
   education: ['library books reading lamp', 'white classroom sunlight bright'],
   real_estate: ['modern house exterior evening', 'white living room sunlight bright window'],
   travel: ['city street night travel', 'white sand beach sunlight bright sky'],
@@ -172,6 +172,22 @@ const QUERIES = {
  * after the group's own queries have had their turn.
  */
 const BRIGHT_FALLBACK = 'white minimal bright overexposed daylight';
+
+/**
+ * The last resort for a group that still owes a DARK clip.
+ *
+ * An earlier version of this file asserted that a dark shortfall "is not a vocabulary problem".
+ * That was wrong, and the run that proved it is worth recording. `trades` was asking for "welding
+ * workshop sparks" and `events` for "wedding reception evening lights" — sparks and moving point
+ * lights against black are the least compressible footage that exists, every frame packed with
+ * high-contrast moving detail. The trial encode correctly rejected candidate after candidate and
+ * the two groups ran out of pool.
+ *
+ * So the vocabulary matters at BOTH ends of the boundary, just for opposite reasons. Light needs
+ * white, or nothing measures light. Dark needs SMOOTH — large calm areas, shallow depth of field,
+ * one soft source — or nothing compresses.
+ */
+const DARK_FALLBACK = 'dark moody smooth soft light minimal calm';
 /**
  * The marketing site's own header.
  *
@@ -590,10 +606,18 @@ async function fill(group, queries, want) {
     // whole run: without this flag the condition below is true on every pass, every pass appends a
     // wave, and the loop never ends. Found by running it.
     const shortOfLight = group === BRAND ? brightest === null : (remaining.light ?? 0) > 0;
-    if (!fallbackSpent && w === waves.length - 1 && shortOfLight) {
+    const shortOfDark = (remaining.dark ?? 0) > 0;
+    if (!fallbackSpent && w === waves.length - 1 && (shortOfLight || shortOfDark)) {
       fallbackSpent = true;
-      console.log(`  ${group.padEnd(14)} no light footage yet — trying the bright fallback`);
-      waves.push(await wave([BRIGHT_FALLBACK], FALLBACK_DOWNLOADS));
+      const queries = [
+        ...(shortOfLight ? [BRIGHT_FALLBACK] : []),
+        ...(shortOfDark ? [DARK_FALLBACK] : []),
+      ];
+      console.log(
+        `  ${group.padEnd(14)} still short — trying the ` +
+          `${queries.length === 2 ? 'bright and dark fallbacks' : shortOfLight ? 'bright fallback' : 'dark fallback'}`,
+      );
+      waves.push(await wave(queries, FALLBACK_DOWNLOADS));
     }
   }
 
