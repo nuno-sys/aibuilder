@@ -106,8 +106,41 @@ const PORTRAIT_POSTER_WIDTHS = [540, 720, 1080, 1440];
  */
 const PORTRAIT_ASPECT = 9 / 19.5;
 
+/**
+ * The byte ceilings the renderer ENFORCES, mirrored here so the encoder can hit them.
+ *
+ * Kept in step with `HERO_VIDEO_*_BUDGET_BYTES` in `packages/core/src/budgets.ts`; the drift test
+ * asserts they match. This is not documentation — `checkHeroVideo` raises a `severity: 'error'`
+ * finding for a clip over the ceiling and `render.ts` turns that into a thrown
+ * `DocumentInvalidError`. A library clip over budget is a customer whose site does not build.
+ */
+const LANDSCAPE_BUDGET_BYTES = 1_400_000;
+const PORTRAIT_BUDGET_BYTES = 450_000;
+
+/**
+ * How far the encoder may walk the quality down to fit, and why it walks at all.
+ *
+ * The CRF values below were chosen against flat synthetic gradients, which compress to almost
+ * nothing. Real footage at the same CRF is two to five times heavier: the first library built from
+ * Pexels put 35 of 56 clips over the ceiling, in all fourteen groups — every one of them a site
+ * that would have failed to generate.
+ *
+ * Guessing better constants would not fix it, because the right CRF depends on the footage. So the
+ * encoder measures instead: encode, weigh, and if it is over, step the CRF up and try again. The
+ * budget is the specification and the quality is what gives.
+ */
+const CRF_STEP = 4;
+const MAX_CRF_ATTEMPTS = 5;
+
 const VIDEO_TARGETS = [
-  { role: 'landscape', width: 1920, height: 1080, av1Crf: 38, h264Crf: 27 },
+  {
+    role: 'landscape',
+    width: 1920,
+    height: 1080,
+    av1Crf: 38,
+    h264Crf: 27,
+    budget: LANDSCAPE_BUDGET_BYTES,
+  },
   // A phone gets its own encode. Handing it the landscape file is the single decision that gives
   // background video its bad reputation: four times the bytes, letterboxed into the wrong shape.
   //
@@ -115,7 +148,14 @@ const VIDEO_TARGETS = [
   // load-bearing one. It fills the screen without cropping; and it is the same shape as the
   // portrait poster, so the moment the video fades in nothing reframes. A 9:16 encode behind a
   // 9:19.5 poster crops another 18% off the sides at the exact instant the visitor is looking.
-  { role: 'portrait', width: 720, height: 1560, av1Crf: 42, h264Crf: 31 },
+  {
+    role: 'portrait',
+    width: 720,
+    height: 1560,
+    av1Crf: 42,
+    h264Crf: 31,
+    budget: PORTRAIT_BUDGET_BYTES,
+  },
 ];
 
 const DURATION = 8;
@@ -203,6 +243,31 @@ function fresh(file) {
   return !FORCE && existsSync(file) && statSync(file).size > 0;
 }
 
+/**
+ * Encodes one file at a CRF ladder until it fits its byte budget, and returns what it took.
+ *
+ * Each step of `CRF_STEP` costs visible quality, so the ladder starts at the CRF that looks right
+ * and only walks when the scales say it must. Failing to fit after `MAX_CRF_ATTEMPTS` throws rather
+ * than shipping an over-budget clip: the renderer would refuse it later anyway, at a customer's
+ * expense instead of ours.
+ */
+function encodeToBudget(file, budget, startCrf, build) {
+  let crf = startCrf;
+  for (let attempt = 0; attempt < MAX_CRF_ATTEMPTS; attempt += 1) {
+    ff(build(crf));
+    const bytes = statSync(file).size;
+    if (bytes <= budget) {
+      return { crf, bytes, attempts: attempt + 1 };
+    }
+    crf += CRF_STEP;
+  }
+  throw new Error(
+    `${path.relative(OUT, file)} will not fit ${String(budget)} B: still ` +
+      `${String(statSync(file).size)} B at CRF ${String(crf - CRF_STEP)}. The source is probably ` +
+      'too noisy or too long — replace the clip rather than raising the ceiling.',
+  );
+}
+
 /** Encodes one clip into every rendition it will ever be served in. */
 function encodeVideo(input, group, name) {
   const renditions = {};
@@ -217,8 +282,11 @@ function encodeVideo(input, group, name) {
     // what makes a portrait encode genuinely fill a phone rather than sit in a black box.
     const scale = `scale=${target.width}:${target.height}:force_original_aspect_ratio=increase,crop=${target.width}:${target.height},fps=${FPS},format=yuv420p`;
 
+    // BOTH codecs have to fit, because the manifest records `max(av1, h264)` and the renderer
+    // checks that number. In practice AV1 fits at its first CRF and H.264 is the one that walks.
     if (!fresh(av1File)) {
-      ff([
+      encodeToBudget(av1File, target.budget, target.av1Crf, (crf) => [
+        // prettier-ignore
         '-i',
         input,
         '-t',
@@ -229,7 +297,7 @@ function encodeVideo(input, group, name) {
         '-c:v',
         'libaom-av1',
         '-crf',
-        String(target.av1Crf),
+        String(crf),
         '-b:v',
         '0',
         '-cpu-used',
@@ -242,7 +310,8 @@ function encodeVideo(input, group, name) {
       ]);
     }
     if (!fresh(h264File)) {
-      ff([
+      encodeToBudget(h264File, target.budget, target.h264Crf, (crf) => [
+        // prettier-ignore
         '-i',
         input,
         '-t',
@@ -257,7 +326,7 @@ function encodeVideo(input, group, name) {
         '-level',
         '4.0',
         '-crf',
-        String(target.h264Crf),
+        String(crf),
         '-preset',
         'medium',
         '-tune',

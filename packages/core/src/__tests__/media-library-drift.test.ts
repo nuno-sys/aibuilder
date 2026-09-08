@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { INDUSTRY_GROUPS } from '../industries';
+import { HERO_VIDEO_LANDSCAPE_BUDGET_BYTES, HERO_VIDEO_PORTRAIT_BUDGET_BYTES } from '../budgets';
 import { LUMINANCE_BOUNDARY } from '../luminance';
 import { LIBRARY_PREFIX, assetContentType, assetPath, parseAssetPath } from '../routing';
 import { MEDIA_LIBRARY } from '../media-library';
@@ -74,6 +75,24 @@ describe('the ingest script agrees with the code that consumes it', () => {
     expect(wanted, 'PER_LUMINANCE not found in fetch-footage.mjs').not.toBeNull();
     expect(gate, 'the coverage gate was not found in ingest.mjs').not.toBeNull();
     expect(Number(wanted?.[1])).toBeGreaterThanOrEqual(Number(gate?.[1]));
+  });
+
+  it('encodes against the byte ceilings the renderer enforces', () => {
+    // Not a style check. `checkHeroVideo` raises a `severity: 'error'` finding for a clip over the
+    // ceiling and `render.ts` turns that into a thrown DocumentInvalidError — so a library encoded
+    // against a looser number is a set of customer sites that fail to build. The first library
+    // built from real footage put 35 of 56 clips over, in all fourteen groups, because the CRF
+    // values had been tuned against flat synthetic gradients.
+    const landscape = /const LANDSCAPE_BUDGET_BYTES = ([0-9_]+);/u.exec(INGEST);
+    const portrait = /const PORTRAIT_BUDGET_BYTES = ([0-9_]+);/u.exec(INGEST);
+    expect(landscape, 'LANDSCAPE_BUDGET_BYTES not found in ingest.mjs').not.toBeNull();
+    expect(portrait, 'PORTRAIT_BUDGET_BYTES not found in ingest.mjs').not.toBeNull();
+    expect(Number((landscape?.[1] ?? '').replaceAll('_', ''))).toBe(
+      HERO_VIDEO_LANDSCAPE_BUDGET_BYTES,
+    );
+    expect(Number((portrait?.[1] ?? '').replaceAll('_', ''))).toBe(
+      HERO_VIDEO_PORTRAIT_BUDGET_BYTES,
+    );
   });
 
   it('uploads to the prefix the renderer reads from', () => {
